@@ -84,16 +84,64 @@ struct TaskDataEditingTopBarView: View {
 }
 
 struct TaskDataEditingThemeView: View {
+    @CodableStorage("settings") private var settings = Settings()
     @Environment(\.dismiss) private var dismiss
     @Bindable var task: TaskData
+    @State var scrollId: String?
     
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack {
-                    
+                LazyVStack(alignment: .leading) {
+                    ForEach(taskIconCategoryKeys, id: \.self) { key in
+                        VStack(alignment: .leading, spacing: 0) {
+                            Label(String(localized: .init(key)), systemImage: taskIconCategoryRepresentativeSymbols[key]!)
+                                .font(.title2)
+                                .fontWeight(scrollId == key ? .bold : .regular)
+                                .foregroundStyle(scrollId == key ? .primary : .secondary)
+                            Divider()
+                                .padding(.top, 6)
+                                .padding(.bottom, 12)
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 48, maximum: 48), spacing: 8)], spacing: 8) {
+                                ForEach(key == "symbols.recents" ? settings.recentSymbols : taskIconSymbolsByCategory[key]!, id: \.self) { symbol in
+                                    let selected = checkSelected(symbol)
+                                    Button {
+                                        task.icon = .system(name: symbol)
+                                        settings.recentSymbols.removeAll { $0 == symbol }
+                                        settings.recentSymbols.insert(symbol, at: 0)
+                                        if settings.recentSymbols.count > 50 {
+                                            settings.recentSymbols.removeLast()
+                                        }
+                                    } label: {
+                                        Image(systemName: symbol)
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fit)
+                                            .frame(width: 24, height: 24)
+                                            .padding(.all, 12)
+                                            .foregroundStyle(selected ? task.theme.bgColorNoOpacity : .primary)
+                                            .background {
+                                                if selected {
+                                                    Circle()
+                                                        .fill(task.theme.fgColor)
+                                                } else {
+                                                    Circle()
+                                                        .fill(.quinary)
+                                                }
+                                            }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(.top)
+                    }
                 }
                 .padding()
+                .scrollTargetLayout()
+            }
+            .scrollPosition(id: $scrollId, anchor: .top)
+            .onAppear {
+                scrollId = "symbols.recents"
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -123,7 +171,7 @@ struct TaskDataEditingThemeView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding()
+                    .padding(.all, 10)
                 }
                 .background {
                     Capsule()
@@ -131,11 +179,52 @@ struct TaskDataEditingThemeView: View {
                         .glassEffect()
                 }
                 .padding(.horizontal)
-                .padding(.bottom)
             }
-            .scrollEdgeEffectStyle(.soft, for: .top)
+            .safeAreaBar(edge: .bottom) {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 0) {
+                        ForEach(taskIconCategoryKeys, id: \.self) { key in
+                            Button {
+                                scrollId = key
+                            } label: {
+                                Image(systemName: taskIconCategoryRepresentativeSymbols[key]!)
+                                    .imageScale(.large)
+                                    .padding(.horizontal, 12)
+                                    .frame(height: 40)
+                                    .contentShape(Capsule())
+                                    .foregroundStyle(scrollId == key ? task.theme.bgColorNoOpacity : .primary)
+                                    .background {
+                                        if scrollId == key {
+                                            Capsule()
+                                                .fill(task.theme.fgColor)
+                                        }
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.all, 8)
+                }
+                .background {
+                    Capsule()
+                        .fill(.clear)
+                        .glassEffect()
+                }
+                .clipShape(Capsule())
+                .padding(.horizontal)
+            }
+            .scrollEdgeEffectStyle(.soft, for: .vertical)
             .navigationTitle("TaskDataEditingThemeView.title")
             .safeSetNavigationTitleDisplayModeToInline()
+        }
+    }
+    
+    private func checkSelected(_ symbol: String) -> Bool {
+        switch task.icon {
+        case .system(let name):
+            return name == symbol
+        case .file(let path):
+            return false
         }
     }
 }
@@ -147,6 +236,8 @@ struct TaskDataEditingTimeView: View {
     @Environment(\.currentTaskIndex) private var index: Int?
     @Environment(\.dismiss) private var dismiss
     @Bindable var task: TaskData
+    
+    @State private var customize: Bool = false
     
     var body: some View {
         NavigationStack {
@@ -174,6 +265,12 @@ struct TaskDataEditingTimeView: View {
                         } else {
                             Text(TimeOfDay(hour: i * 5 / 60, minute: i * 5 % 60).description)
                                 .tag(i * 5)
+                        }
+                        
+                        if i * 5 < task.startTime && (i + 1) * 5 > task.startTime {
+                            Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description)")
+                                .bold()
+                                .tag(task.startTime)
                         }
                     }
                 }
@@ -213,6 +310,8 @@ struct TaskDataEditingTimeView: View {
                         .fill(.quinary)
                 }
                 HStack {
+                    let maxSelected = task.durationWithoutPreparation == maxD
+                    
                     HStack(spacing: 0) {
                         let value = settings.defaultDurations[5]
                         let selected = value == task.durationWithoutPreparation
@@ -233,16 +332,15 @@ struct TaskDataEditingTimeView: View {
                         .buttonStyle(.plain)
                         .disabled(value > maxD)
                         
-                        let selected2 = task.durationWithoutPreparation == maxD
                         Button {
                             task.endTime = task.startTime + maxD
                         } label: {
                             Text("TaskDataEditingTimeView.max")
-                                .foregroundStyle(selected2 ? task.theme.bgColorNoOpacity : .secondary)
-                                .fontWeight(selected2 ? .bold : .regular)
+                                .foregroundStyle(maxSelected ? task.theme.bgColorNoOpacity : .secondary)
+                                .fontWeight(maxSelected ? .bold : .regular)
                                 .padding()
                                 .background {
-                                    if selected2 {
+                                    if maxSelected {
                                         Capsule()
                                             .fill(task.theme.fgColor)
                                     }
@@ -258,13 +356,23 @@ struct TaskDataEditingTimeView: View {
                     
                     Spacer()
                     
+                    let customizeSelected = !maxSelected && !settings.defaultDurations.contains(task.durationWithoutPreparation)
+                    
                     Button {
-                        
+                        customize.toggle()
                     } label: {
-                        Text("TaskDataEditingTimeView.customize")
+                        Text(customizeSelected ? "\(task.durationWithoutPreparation.minutesShortDescription)" : String(localized: .init("TaskDataEditingTimeView.customize")))
                             .bold()
                             .padding()
+                            .background {
+                                if customizeSelected {
+                                    Capsule()
+                                        .fill(task.theme.fgColor)
+                                }
+                            }
+                            .foregroundStyle(customizeSelected ? task.theme.bgColorNoOpacity : .primary)
                             .padding(.all, 8)
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                     .background {
@@ -282,6 +390,134 @@ struct TaskDataEditingTimeView: View {
                         dismiss()
                     }
                 }
+            }
+            .sheet(isPresented: $customize) {
+                TaskDataEditingTimeCustomizeView(task: task)
+                    .presentationDetents([.medium])
+            }
+        }
+    }
+}
+
+struct TaskDataEditingTimeCustomizeView: View {
+    @Environment(TimelineViewModel.self) private var vm
+    @Environment(\.currentTaskIndex) private var index: Int?
+    @Environment(\.dismiss) private var dismiss
+    @Bindable var task: TaskData
+    
+    @State var hoursAndMinutes: [Int: [Int]] = [:]
+    @State var endHoursAndMinutes: [Int: [Int]] = [:]
+    
+    var body: some View {
+        NavigationStack {
+            HStack(spacing: 0) {
+                Picker("", selection: Binding<Int> {
+                    return task.startTime / 60
+                } set: { newValue in
+                    if hoursAndMinutes[newValue]!.contains(task.startTime % 60) {
+                        task.startTime = newValue * 60 + task.startTime % 60
+                    } else {
+                        task.startTime = newValue * 60 + hoursAndMinutes[newValue]!.first!
+                    }
+                    
+                    if task.endTime <= task.startTime {
+                        task.endTime = task.startTime + 1
+                    }
+                    
+                    let maxD = vm.availableDuration(after: task.startTime)
+                    if task.durationWithoutPreparation > maxD {
+                        task.endTime = task.startTime + maxD
+                    }
+                    
+                    endHoursAndMinutes = vm.availableHoursAndMinutes(after: task.startTime, exclude: index)
+                }) {
+                    ForEach(hoursAndMinutes.keys.sorted(), id: \.self) { i in
+                        Text(String(format: "%02d", i))
+                            .tag(i)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.wheel)
+                Text(":")
+                    .font(.title2)
+                    .bold()
+                Picker("", selection: Binding<Int> {
+                    return task.startTime % 60
+                } set: { newValue in
+                    task.startTime = task.startTime / 60 * 60 + newValue
+                    
+                    if task.endTime <= task.startTime {
+                        task.endTime = task.startTime + 1
+                    }
+                    
+                    let maxD = vm.availableDuration(after: task.startTime)
+                    if task.durationWithoutPreparation > maxD {
+                        task.endTime = task.startTime + maxD
+                    }
+                    
+                    endHoursAndMinutes = vm.availableHoursAndMinutes(after: task.startTime, exclude: index)
+                }) {
+                    if let v = hoursAndMinutes[task.startTime / 60] {
+                        ForEach(v, id: \.self) { i in
+                            Text(String(format: "%02d", i))
+                                .tag(i)
+                        }
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.wheel)
+                
+                Image(systemName: "arrow.right")
+                    .bold()
+                    .padding()
+                
+                Picker("", selection: Binding<Int> {
+                    return task.endTime / 60
+                } set: { newValue in
+                    if endHoursAndMinutes[newValue]?.contains(task.endTime % 60) ?? false {
+                        task.endTime = newValue * 60 + task.endTime % 60
+                    } else {
+                        task.endTime = newValue * 60 + (hoursAndMinutes[newValue]?.first ?? 0)
+                    }
+                }) {
+                    ForEach(endHoursAndMinutes.keys.sorted(), id: \.self) { i in
+                        Text(String(format: "%02d", i))
+                            .tag(i)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.wheel)
+                Text(":")
+                    .font(.title2)
+                    .bold()
+                Picker("", selection: Binding<Int> {
+                    return task.endTime % 60
+                } set: { newValue in
+                    task.endTime = task.endTime / 60 * 60 + newValue
+                }) {
+                    if let v = endHoursAndMinutes[task.endTime / 60] {
+                        ForEach(v, id: \.self) { i in
+                            Text(String(format: "%02d", i))
+                                .tag(i)
+                        }
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.wheel)
+            }
+            .padding()
+            .navigationTitle("TaskDataEditingTimeCustomizeView.title")
+            .safeSetNavigationTitleDisplayModeToInline()
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("", systemImage: "xmark") {
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear {
+                hoursAndMinutes = vm.availableHoursAndMinutes(exclude: index)
+                endHoursAndMinutes = vm.availableHoursAndMinutes(after: task.startTime, exclude: index)
             }
         }
     }
@@ -496,7 +732,6 @@ struct TaskDataEditingView: View {
             case .theme:
                 TaskDataEditingThemeView(task: task)
                     .presentationDetents([.medium, .large])
-                    .presentationBackgroundInteraction(.enabled)
             case .time:
                 TaskDataEditingTimeView(task: task)
                     .presentationDetents([.medium])
@@ -529,7 +764,7 @@ struct TaskDataEditingView: View {
                 onSave()
             } label: {
                 Text("TaskEditingView.save")
-                    .foregroundStyle(.accentText)
+                    .foregroundStyle(task.theme.bgColorNoOpacity)
                     .font(.title2)
                     .bold()
                     .frame(maxWidth: .infinity)

@@ -10,6 +10,7 @@ import SwiftUI
 struct Settings: Codable {
     var minutesPerPt: CGFloat = 0.8
     var defaultDurations: [Int] = [1, 5, 20, 45, 95, 145]
+    var recentSymbols: [String] = []
 }
 
 @propertyWrapper

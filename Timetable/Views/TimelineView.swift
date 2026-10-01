@@ -62,6 +62,26 @@ struct TimelineStackView: View {
 
 @Observable
 final class TimelineViewModel {
+    static let allIndexes: [Int] = {
+        var rv: [Int] = []
+        for i in 0..<288 {
+            rv.append(i)
+        }
+        return rv
+    }()
+    
+    static let allHoursAndMinutes: [Int: [Int]] = {
+        var rv: [Int: [Int]] = [:]
+        for i in 0...23 {
+            var temp: [Int] = []
+            for j in 0...59 {
+                temp.append(j)
+            }
+            rv.updateValue(temp, forKey: i)
+        }
+        return rv
+    }()
+    
     var currentDay: Day = .today
     var displayedDays: [Day] = Day.today.weeks
     var scrollId: String? = nil
@@ -96,14 +116,12 @@ final class TimelineViewModel {
         } else {
             scheduled = self.scheduled
         }
-        var rv: [Int] = []
-        
+
         if scheduled.isEmpty {
-            for i in 0..<288 {
-                rv.append(i)
-            }
-            return rv
+            return TimelineViewModel.allIndexes
         }
+        
+        var rv: [Int] = []
         
         for i in 0..<scheduled.first!.lowerBound {
             if i % 5 == 0 { rv.append(i / 5) }
@@ -168,6 +186,72 @@ final class TimelineViewModel {
     
     func firstAvailableIndexAfter(_ time: Int) -> Int? {
         return availableIndexes.first { $0 > time / 5 } ?? availableIndexes.first
+    }
+    
+    func availableHoursAndMinutes(exclude: Int? = nil) -> [Int: [Int]] {
+        var scheduled: [ClosedRange<Int>]
+        if let exclude {
+            scheduled = self.scheduled
+            scheduled.remove(at: exclude)
+        } else {
+            scheduled = self.scheduled
+        }
+        
+        if scheduled.isEmpty {
+            return TimelineViewModel.allHoursAndMinutes
+        }
+        
+        var rv: [Int: [Int]] = [:]
+        
+        for i in 0..<scheduled.first!.lowerBound {
+            let hour = i / 60
+            let minute = i % 60
+            if rv[hour] != nil {
+                rv[hour]!.append(minute)
+            } else {
+                rv.updateValue([minute], forKey: hour)
+            }
+        }
+        for i in 0..<scheduled.count - 1 {
+            for j in scheduled[i].upperBound..<scheduled[i + 1].lowerBound {
+                let hour = j / 60
+                let minute = j % 60
+                if rv[hour] != nil {
+                    rv[hour]!.append(minute)
+                } else {
+                    rv.updateValue([minute], forKey: hour)
+                }
+            }
+        }
+        for i in scheduled.last!.upperBound..<1440 {
+            let hour = i / 60
+            let minute = i % 60
+            if rv[hour] != nil {
+                rv[hour]!.append(minute)
+            } else {
+                rv.updateValue([minute], forKey: hour)
+            }
+        }
+        
+        return rv
+    }
+    
+    func availableHoursAndMinutes(after: Int, exclude: Int? = nil) -> [Int: [Int]] {
+        let max = availableDuration(after: after, exclude: exclude)
+        
+        var rv: [Int: [Int]] = [:]
+        
+        for i in (after + 1)...(after + max) {
+            let hour = i / 60
+            let minute = i % 60
+            if rv[hour] != nil {
+                rv[hour]!.append(minute)
+            } else {
+                rv.updateValue([minute], forKey: hour)
+            }
+        }
+        
+        return rv
     }
 
     func loadDayTasks(context: ModelContext) {
