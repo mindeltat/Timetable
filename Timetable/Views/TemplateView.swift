@@ -22,7 +22,8 @@ struct TemplateView: View {
                     TimelineStackView(
                         tasks: viewModel.sortedTasks,
                         currentDay: viewModel.currentDay,
-                        dayState: viewModel.dayState
+                        dayState: viewModel.dayState,
+                        nowFreshId: 0
                     )
                     .padding()
                 }

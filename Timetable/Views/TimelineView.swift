@@ -18,6 +18,7 @@ struct TimelineStackView: View {
     let tasks: [TaskData]
     let currentDay: Day
     let dayState: DayState
+    let nowFreshId: Int
 
     var body: some View {
         let nowMinutes = minutesSinceStartOfDay()
@@ -227,9 +228,11 @@ final class TimelineViewModel {
 }
 
 struct TimelineView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = TimelineViewModel()
     @State private var isAddingTask: Bool = false
+    @State private var nowFreshId: Int = 0
 
     var body: some View {
         @Bindable var vm = viewModel
@@ -240,7 +243,8 @@ struct TimelineView: View {
                     TimelineStackView(
                         tasks: viewModel.sortedTasks,
                         currentDay: viewModel.currentDay,
-                        dayState: viewModel.dayState
+                        dayState: viewModel.dayState,
+                        nowFreshId: nowFreshId
                     )
                     .padding()
                 }
@@ -339,6 +343,12 @@ struct TimelineView: View {
         .onAppear {
             viewModel.loadDayTasks(context: modelContext)
             viewModel.updateScrollId()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                viewModel.updateScrollId()
+                nowFreshId += 1
+            }
         }
         .environment(viewModel)
     }
