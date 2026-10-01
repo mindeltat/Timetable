@@ -1,0 +1,37 @@
+/* 
+  Localizable.strings
+  Timetable
+
+  Created by Zack on 2026/9/29.
+  
+*/
+
+"AppTab.timeline" = "Timeline";
+"AppTab.template" = "Template";
+"AppTab.settings" = "Settings";
+"PreparationContentView.advance1" = "Remember to prepare";
+"PreparationContentView.advance2" = "in advance. ";
+"minute" = "min";
+"hour" = "hr";
+"seperater" = ",";
+"Sun" = "Sun";
+"Mon" = "Mon";
+"Tue" = "Tue";
+"Wed" = "Wed";
+"Thu" = "Thu";
+"Fri" = "Fri";
+"Sat" = "Sat";
+"TaskEditingView.save" = "Save";
+"TaskEditingView.delete" = "Delete";
+"TaskDataEditingView.inAdvance" = "in advance";
+"TaskDataEditingView.noPreparation" = "No preparation needed";
+"TaskDataEditingView.details" = "Details";
+"TaskDataEditingView.detailsTextField" = "Add Details";
+"TaskDataEditingView.tags" = "Tags";
+"TaskDataEditingThemeView.title" = "Theme & Icon";
+"TaskDataEditingTimeView.title" = "Time & Duration";
+"TaskDataEditingTimeView.max" = "Max";
+"TaskDataEditingTimeView.customize" = "Customize...";
+"TaskDataEditingPreparationView.title" = "Preparation";
+"TaskDataEditingTagsView.new" = "New";
+"TaskDataEditingTagsView.newTag" = "New Tag";

@@ -1,0 +1,37 @@
+/* 
+  Localizable.strings
+  Timetable
+
+  Created by Zack on 2026/9/29.
+  
+*/
+
+"AppTab.timeline" = "时间轴";
+"AppTab.template" = "模板";
+"AppTab.settings" = "设置";
+"PreparationContentView.advance1" = "记得提前";
+"PreparationContentView.advance2" = "准备。 ";
+"minute" = "分钟";
+"hour" = "小时";
+"seperater" = "";
+"Sun" = "周日";
+"Mon" = "周一";
+"Tue" = "周二";
+"Wed" = "周三";
+"Thu" = "周四";
+"Fri" = "周五";
+"Sat" = "周六";
+"TaskEditingView.save" = "保存";
+"TaskEditingView.delete" = "删除";
+"TaskDataEditingView.inAdvance" = "准备时间";
+"TaskDataEditingView.noPreparation" = "无需准备时间";
+"TaskDataEditingView.details" = "细节";
+"TaskDataEditingView.detailsTextField" = "添加细节";
+"TaskDataEditingView.tags" = "标签";
+"TaskDataEditingThemeView.title" = "主题和图标";
+"TaskDataEditingTimeView.title" = "时间";
+"TaskDataEditingTimeView.max" = "最大";
+"TaskDataEditingTimeView.customize" = "自定义...";
+"TaskDataEditingPreparationView.title" = "准备时间";
+"TaskDataEditingTagsView.new" = "新标签";
+"TaskDataEditingTagsView.newTag" = "标签";
