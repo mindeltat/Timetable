@@ -79,3 +79,5 @@
 "TimelineView.confirmClear.text" = "Current tasks will not be saved.";
 "TaskDataEditingView.deleteConfirm" = "Confirm deletion?";
 "TaskDataEditingView.deleteConfirm.text" = "This action cannot be revoked.";
+"notification.1" = "starts at";
+"notification.2" = ". ";

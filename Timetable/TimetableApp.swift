@@ -10,6 +10,8 @@ import SwiftData
 
 @main
 struct TimetableApp: App {
+    @AppStorage("hasRequestedNotification") private var hasRequestedNotification = false
+    
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             TaskData.self,
@@ -28,6 +30,13 @@ struct TimetableApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onAppear {
+                    if !hasRequestedNotification {
+                        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in
+                            hasRequestedNotification = true
+                        }
+                    }
+                }
         }
         .modelContainer(sharedModelContainer)
     }

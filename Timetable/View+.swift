@@ -60,3 +60,14 @@ extension EnvironmentValues {
         set { self[CurrentTaskIndexKey.self] = newValue }
     }
 }
+
+private struct IsTemplateKey: EnvironmentKey {
+    static let defaultValue: Bool = false
+}
+
+extension EnvironmentValues {
+    var isTemplate: Bool {
+        get { self[IsTemplateKey.self] }
+        set { self[IsTemplateKey.self] = newValue }
+    }
+}

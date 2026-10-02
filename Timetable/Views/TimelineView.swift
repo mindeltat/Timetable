@@ -337,7 +337,7 @@ struct TimelineView: View {
                 }
             }
             .sheet(isPresented: $isAddingTask) {
-                let i: Int? = vm.dayState == .today ? viewModel.firstAvailableIndexAfterNow : viewModel.firstAvailableIndexAfter(359)
+                let i: Int? = vm.dayState == .today ? viewModel.firstAvailableIndexAfterNow : viewModel.firstAvailableIndexAfter(viewModel.dayTasks?.tasks.last?.endTime ?? 359)
                 if let i {
                     TaskEditingView(
                         task: .init(startTime: i * 5, endTime: i * 5 + 1),
@@ -436,6 +436,7 @@ struct TimelineView: View {
                     }
                     .confirmationDialog("TimelineView.confirmTemplate", item: $templateToChange, titleVisibility: .visible) { newValue in
                         Button("confirm", role: .destructive) {
+                            viewModel.dayTasks?.removeTasks(in: modelContext)
                             viewModel.dayTasks?.applyTemplate(use: newValue, template: UserTemplates.shared(in: modelContext))
                             templateToChange = nil
                         }

@@ -96,7 +96,8 @@ enum SampleData {
                           month: comps.month ?? 1,
                           day: comps.day ?? 1)
 
-            let dayTasks = DayTasks(from: templates, on: day)
+            let dayTasks = DayTasks(day: day, template: day.weekday)
+            dayTasks.applyTemplate(use: day.weekday, template: templates)
 
             if offset == 0, let first = dayTasks.tasks.first {
                 first.title = "Rest"

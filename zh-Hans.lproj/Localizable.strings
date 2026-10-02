@@ -79,3 +79,5 @@
 "TimelineView.confirmClear.text" = "当前任务不会保存。";
 "TaskDataEditingView.deleteConfirm" = "确认删除？";
 "TaskDataEditingView.deleteConfirm.text" = "此操作不可撤销。";
+"notification.1" = "将在";
+"notification.2" = " 开始。";

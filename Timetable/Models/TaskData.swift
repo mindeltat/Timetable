@@ -131,6 +131,14 @@ nonisolated struct Day: Hashable, Codable, Equatable {
         return calendar.date(from: DateComponents(year: year, month: month, day: day)) ?? .now
     }
     
+    var next: Day {
+        let calendar = Calendar(identifier: .gregorian)
+        guard let nextDate = calendar.date(byAdding: .day, value: 1, to: date) else {
+            return self
+        }
+        return Day(date: nextDate)
+    }
+    
     init(date: Date) {
         var calendar = Calendar(identifier: .gregorian)
         calendar.firstWeekday = 1
@@ -223,18 +231,21 @@ final class TaskData {
     var content: String
     var theme: Theme
     var icon: ImageType
-
+    
     var startTime: Int
     var endTime: Int
     var preparationTime: Int
-
-    var notificationID: String?
+    
+    var notificationID: String
+    var hasScheduledNotification: Bool = false
     var isOnBadWeather: Bool
     var badWeatherAheadTime: Int
     var effort: Int
     
     var tags: [String]
-
+    
+    @Relationship(inverse: \DayTasks.tasks) var day: DayTasks?
+    
     init(
         title: String = "",
         content: String = "",
@@ -243,7 +254,6 @@ final class TaskData {
         startTime: Int = 0,
         endTime: Int = 0,
         preparationTime: Int = 0,
-        notificationID: String? = nil,
         isOnBadWeather: Bool = false,
         badWeatherAheadTime: Int = 0,
         effort: Int = 1,
@@ -256,14 +266,14 @@ final class TaskData {
         self.startTime = startTime
         self.endTime = endTime
         self.preparationTime = preparationTime
-        self.notificationID = notificationID
+        self.notificationID = UUID().uuidString
         self.isOnBadWeather = isOnBadWeather
         self.effort = effort
         self.id = UUID().uuidString
         self.badWeatherAheadTime = badWeatherAheadTime
         self.tags = tags
     }
-
+    
     convenience init(copying other: TaskData) {
         self.init(
             title: other.title,
@@ -273,7 +283,6 @@ final class TaskData {
             startTime: other.startTime,
             endTime: other.endTime,
             preparationTime: other.preparationTime,
-            notificationID: nil,
             isOnBadWeather: false,
             badWeatherAheadTime: other.badWeatherAheadTime,
             effort: other.effort,
@@ -293,11 +302,15 @@ final class TaskData {
         self.effort = other.effort
         self.tags = other.tags
     }
-
+    
     var startTimeOfDay: TimeOfDay {
         TimeOfDay(hour: startTime / 60, minute: startTime % 60)
     }
-
+    
+    var preparationStartTimeOfDay: TimeOfDay {
+        TimeOfDay(hour: (startTime - preparationTime) / 60, minute: (startTime - preparationTime) % 60)
+    }
+    
     var endTimeOfDay: TimeOfDay {
         TimeOfDay(hour: endTime / 60, minute: endTime % 60)
     }
@@ -309,9 +322,7 @@ final class TaskData {
     var durationWithPreparation: Int {
         endTime - startTime + preparationTime
     }
-}
-
-extension TaskData {
+    
     func topTime(dayState: DayState, nowMinutes: Int) -> TimeOfDay {
         let preparationIsDone: Bool
         switch dayState {
@@ -322,12 +333,66 @@ extension TaskData {
         case .today:
             preparationIsDone = nowMinutes >= startTime
         }
-
+        
         if !preparationIsDone {
             let m = startTime - preparationTime
             return TimeOfDay(hour: m / 60, minute: m % 60)
         }
         return startTimeOfDay
+    }
+    
+    func scheduleNotification() {
+        guard let day = self.day else { return }
+        
+        let today = Day.today
+        
+        if day.dayValue >= today && day.dayValue < today.next.next.next {
+            uncheckedScheduleNotification()
+        }
+    }
+    
+    func uncheckedScheduleNotification() {
+        guard let day = self.day else { return }
+        
+        cancelNotification()
+        
+        var components = DateComponents()
+        components.year = day.year
+        components.month = day.month
+        components.day = day.day
+        components.hour = preparationStartTimeOfDay.hour
+        components.minute = preparationStartTimeOfDay.minute
+        components.second = 0
+        
+        guard let date = Calendar.current.date(from: components) else { return }
+        guard let date2 = Calendar.current.date(byAdding: .minute, value: -2, to: date) else { return }
+        
+        guard date2 > .now else { return }
+        
+        let newComponents = Calendar.current.dateComponents(
+            [.year, .month, .day, .hour, .minute, .second],
+            from: date2
+        )
+        
+        let trigger = UNCalendarNotificationTrigger(dateMatching: newComponents, repeats: false)
+        
+        let content = UNMutableNotificationContent()
+        content.title = title
+        
+        let prepare = preparationTime == 0 ? "" : "\(String(localized: .init("PreparationContentView.advance1"))) \(preparationTime.minutesDescription) \(String(localized: .init("PreparationContentView.advance2")))"
+        let tagStr = tags.isEmpty ? "" : "\n" + tags.joined(separator: " ")
+        content.body = "\(title) \(String(localized: "notification.1")) \(startTimeOfDay.description)\(String(localized: "notification.2"))\(prepare)\(tagStr)"
+        
+        let request = UNNotificationRequest(identifier: notificationID, content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request)
+        
+        self.hasScheduledNotification = true
+    }
+    
+    func cancelNotification() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [notificationID])
+        self.hasScheduledNotification = false
     }
 }
 
@@ -397,11 +462,6 @@ final class DayTasks {
         self.useTemplate = template
     }
 
-    convenience init(from template: UserTemplates, on day: Day) {
-        let copies = template.tasks(for: day.weekday).map { TaskData(copying: $0) }
-        self.init(day: day, tasks: copies, template: day.weekday)
-    }
-
     static func fetch(for day: Day, in context: ModelContext) -> DayTasks? {
         let id = day.description
         let descriptor = FetchDescriptor<DayTasks>(
@@ -429,11 +489,12 @@ final class DayTasks {
             return existing
         }
         
-        if day < .today {
-            return DayTasks(day: day, template: day.weekday)
+        let newDay: DayTasks = DayTasks(day: day, template: day.weekday)
+        
+        if day >= .today {
+            newDay.applyTemplate(use: day.weekday, template: template)
         }
         
-        let newDay = DayTasks(from: template, on: day)
         context.insert(newDay)
         try? context.save()
         return newDay
@@ -441,6 +502,7 @@ final class DayTasks {
     
     func removeTasks(in context: ModelContext) {
         for task in tasks {
+            task.cancelNotification()
             context.delete(task)
         }
         tasks = []
@@ -450,5 +512,8 @@ final class DayTasks {
     func applyTemplate(use weekday: Weekday, template: UserTemplates) {
         useTemplate = weekday
         tasks = template.tasks(for: weekday).map { TaskData(copying: $0) }
+        for task in tasks {
+            task.scheduleNotification()
+        }
     }
 }

@@ -13,6 +13,7 @@ struct TaskEditingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(TimelineViewModel.self) private var vm
+    @Environment(\.isTemplate) private var isTemplate
     
     let task: TaskData
     @State var copiedTask: TaskData
@@ -29,15 +30,28 @@ struct TaskEditingView: View {
             TaskDataEditingView(task: copiedTask) {
                 vm.dayTasks!.tasks.removeAll { $0.id == task.id }
                 vm.dayTasks!.useTemplate = nil
+                task.cancelNotification()
                 modelContext.delete(task)
                 dismiss()
             } onSave: {
+                let changed = task.startTime != copiedTask.startTime || task.preparationTime != copiedTask.preparationTime
+                
                 task.copy(copiedTask)
                 if !existed {
                     modelContext.insert(task)
                     vm.dayTasks!.tasks.append(task)
                 }
                 vm.dayTasks!.useTemplate = nil
+                
+                if changed || !existed {
+                    task.scheduleNotification()
+                }
+                
+                if isTemplate {
+                    DayTasks.getOrCreate(for: .today.next, template: .shared(in: modelContext), in: modelContext)
+                    DayTasks.getOrCreate(for: .today.next.next, template: .shared(in: modelContext), in: modelContext)
+                }
+                
                 try? modelContext.save()
                 dismiss()
             }
@@ -60,7 +74,7 @@ struct TaskDataEditingTopBarView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description) (\((task.endTime - task.startTime).minutesDescription))")
                         .foregroundStyle(.secondary)
-                    TextField("untitled", text: $task.title)
+                    TextField("untitled", text: $task.title, prompt: Text("untitled").foregroundStyle(task.theme.fgColor.opacity(0.4)))
                         .font(.title3)
                         .bold()
                     Rectangle()
@@ -259,7 +273,17 @@ struct TaskDataEditingTimeView: View {
                     }
                     task.startTime = newValue
                 }) {
-                    ForEach(vm.availableIndexes(exclude: index), id: \.self) { i in
+                    let indexes = vm.availableIndexes(exclude: index)
+                    
+                    if let first = indexes.first {
+                        if task.startTime < first * 5 {
+                            Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description)")
+                                .bold()
+                                .tag(task.startTime)
+                        }
+                    }
+                    
+                    ForEach(Array(indexes.enumerated()), id: \.offset) { index, i in
                         if i * 5 == task.startTime {
                             Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description)")
                                 .bold()
@@ -269,10 +293,18 @@ struct TaskDataEditingTimeView: View {
                                 .tag(i * 5)
                         }
                         
-                        if i * 5 < task.startTime && (i + 1) * 5 > task.startTime {
-                            Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description)")
-                                .bold()
-                                .tag(task.startTime)
+                        if i != indexes.count - 1 {
+                            if i * 5 < task.startTime && indexes[index + 1] * 5 > task.startTime {
+                                Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description)")
+                                    .bold()
+                                    .tag(task.startTime)
+                            }
+                        } else {
+                            if i * 5 < task.startTime {
+                                Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description)")
+                                    .bold()
+                                    .tag(task.startTime)
+                            }
                         }
                     }
                 }
@@ -594,7 +626,7 @@ struct TagEditingView: View {
     
     var body: some View {
         HStack(spacing: 4) {
-            TextField("TaskDataEditingTagsView.newTag", text: $tag)
+            TextField("TaskDataEditingTagsView.newTag", text: $tag, prompt: Text("TaskDataEditingTagsView.newTag").foregroundStyle(theme.fgColor.opacity(0.4)))
             Button {
                 onDeletion()
             } label: {

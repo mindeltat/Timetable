@@ -29,7 +29,7 @@ struct TemplateView: View {
                 }
             }
             .sheet(isPresented: $isAddingTask) {
-                let i: Int? = vm.dayState == .today ? viewModel.firstAvailableIndexAfterNow : viewModel.firstAvailableIndexAfter(359)
+                let i: Int? = viewModel.firstAvailableIndexAfter(viewModel.dayTasks?.tasks.last?.endTime ?? 359)
                 if let i {
                     TaskEditingView(
                         task: .init(startTime: i * 5, endTime: i * 5 + 1),
@@ -81,6 +81,7 @@ struct TemplateView: View {
             viewModel.loadDayTasks(context: modelContext)
         }
         .environment(viewModel)
+        .environment(\.isTemplate, true)
     }
 }
 
