@@ -236,7 +236,7 @@ final class TaskData {
     var tags: [String]
 
     init(
-        title: String = "Untitled",
+        title: String = "",
         content: String = "",
         theme: Theme = .allCases.randomElement()!,
         icon: ImageType = .system(name: "star.fill"),
@@ -423,15 +423,32 @@ final class DayTasks {
             if existing.useTemplate == nil {
                 return existing
             }
-            context.delete(existing)
+            
+            existing.removeTasks(in: context)
+            existing.applyTemplate(use: existing.useTemplate!, template: template)
+            return existing
         }
+        
+        if day < .today {
+            return DayTasks(day: day, template: day.weekday)
+        }
+        
         let newDay = DayTasks(from: template, on: day)
         context.insert(newDay)
         try? context.save()
         return newDay
     }
+    
+    func removeTasks(in context: ModelContext) {
+        for task in tasks {
+            context.delete(task)
+        }
+        tasks = []
+        try? context.save()
+    }
 
-    func applyTemplate(_ template: UserTemplates) {
-        tasks = template.tasks(for: dayValue.weekday).map { TaskData(copying: $0) }
+    func applyTemplate(use weekday: Weekday, template: UserTemplates) {
+        useTemplate = weekday
+        tasks = template.tasks(for: weekday).map { TaskData(copying: $0) }
     }
 }

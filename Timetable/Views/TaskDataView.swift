@@ -418,6 +418,10 @@ struct TaskBodyContent: View {
                         }
                     }
                 }
+                if !task.tags.isEmpty && task.content != "" {
+                    Color.clear
+                        .frame(height: 6)
+                }
                 if task.content != "" {
                     Text(task.content)
                 }

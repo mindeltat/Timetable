@@ -42,6 +42,8 @@ struct TaskEditingView: View {
                 dismiss()
             }
         }
+        .presentationDetents([.large])
+        .interactiveDismissDisabled()
     }
 }
 
@@ -58,7 +60,7 @@ struct TaskDataEditingTopBarView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description) (\((task.endTime - task.startTime).minutesDescription))")
                         .foregroundStyle(.secondary)
-                    TextField("", text: $task.title)
+                    TextField("untitled", text: $task.title)
                         .font(.title3)
                         .bold()
                     Rectangle()
@@ -393,7 +395,7 @@ struct TaskDataEditingTimeView: View {
             }
             .sheet(isPresented: $customize) {
                 TaskDataEditingTimeCustomizeView(task: task)
-                    .presentationDetents([.medium])
+                    .presentationDetents([.fraction(0.36)])
             }
         }
     }
@@ -477,7 +479,7 @@ struct TaskDataEditingTimeCustomizeView: View {
                     if endHoursAndMinutes[newValue]?.contains(task.endTime % 60) ?? false {
                         task.endTime = newValue * 60 + task.endTime % 60
                     } else {
-                        task.endTime = newValue * 60 + (hoursAndMinutes[newValue]?.first ?? 0)
+                        task.endTime = newValue * 60 + (endHoursAndMinutes[newValue]?.first ?? 0)
                     }
                 }) {
                     ForEach(endHoursAndMinutes.keys.sorted(), id: \.self) { i in
@@ -505,7 +507,7 @@ struct TaskDataEditingTimeCustomizeView: View {
                 .labelsHidden()
                 .pickerStyle(.wheel)
             }
-            .padding()
+            .padding(.horizontal)
             .navigationTitle("TaskDataEditingTimeCustomizeView.title")
             .safeSetNavigationTitleDisplayModeToInline()
             .toolbar {
@@ -592,7 +594,7 @@ struct TagEditingView: View {
     
     var body: some View {
         HStack(spacing: 4) {
-            TextField("", text: $tag)
+            TextField("TaskDataEditingTagsView.newTag", text: $tag)
             Button {
                 onDeletion()
             } label: {
@@ -625,7 +627,7 @@ struct TaskDataEditingTagsView: View {
             }
             
             Button {
-                task.tags.append(String(localized: .init("TaskDataEditingTagsView.newTag")))
+                task.tags.append("")
             } label: {
                 HStack(spacing: 4) {
                     Text("TaskDataEditingTagsView.new")
@@ -662,6 +664,7 @@ struct TaskDataEditingView: View {
     let onSave: () -> Void
     
     @State private var secondaryMenu: SecondaryMenu? = nil
+    @State private var deleteConfirm: Bool = false
     
     var body: some View {
         Form {
@@ -718,12 +721,22 @@ struct TaskDataEditingView: View {
             
             Section {
                 Button(role: .destructive) {
-                    onDelete()
+                    deleteConfirm.toggle()
                 } label: {
                     Text("\(Image(systemName: "trash.fill")) \(Text("TaskEditingView.delete"))")
                         .foregroundStyle(.red)
                         .frame(maxWidth: .infinity)
                         .bold()
+                }
+                .confirmationDialog("TaskDataEditingView.deleteConfirm", isPresented: $deleteConfirm, titleVisibility: .visible) {
+                    Button("confirm", role: .destructive) {
+                        onDelete()
+                    }
+                    Button("cancel", role: .cancel) {
+                        deleteConfirm = false
+                    }
+                } message: {
+                    Text("TaskDataEditingView.deleteConfirm.text")
                 }
             }
         }

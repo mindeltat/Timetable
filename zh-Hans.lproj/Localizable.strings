@@ -6,6 +6,7 @@
   
 */
 
+"untitled" = "未命名";
 "AppTab.timeline" = "时间轴";
 "AppTab.template" = "模板";
 "AppTab.settings" = "设置";
@@ -61,3 +62,20 @@
 "symbols.meetings" = "会议与日程";
 "symbols.personalCare" = "个人护理";
 "symbols.others" = "其他";
+"TimelineView.template1" = "使用周日模板";
+"TimelineView.template2" = "使用周一模板";
+"TimelineView.template3" = "使用周二模板";
+"TimelineView.template4" = "使用周三模板";
+"TimelineView.template5" = "使用周四模板";
+"TimelineView.template6" = "使用周五模板";
+"TimelineView.template7" = "使用周六模板";
+"TimelineView.template8" = "无模板";
+"TimelineView.confirmTemplate" = "确认应用模板？";
+"TimelineView.confirmTemplate.text" = "当前任务不会保存。";
+"confirm" = "确认";
+"cancel" = "取消";
+"TimelineView.clear" = "清空所有任务";
+"TimelineView.confirmClear" = "确认清空？";
+"TimelineView.confirmClear.text" = "当前任务不会保存。";
+"TaskDataEditingView.deleteConfirm" = "确认删除？";
+"TaskDataEditingView.deleteConfirm.text" = "此操作不可撤销。";

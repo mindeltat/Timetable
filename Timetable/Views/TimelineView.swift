@@ -317,6 +317,9 @@ struct TimelineView: View {
     @State private var viewModel = TimelineViewModel()
     @State private var isAddingTask: Bool = false
     @State private var nowFreshId: Int = 0
+    
+    @State var templateToChange: Weekday? = nil
+    @State var showClearAlert: Bool = false
 
     var body: some View {
         @Bindable var vm = viewModel
@@ -409,8 +412,62 @@ struct TimelineView: View {
             .safeSetNavigationTitleDisplayModeToInline()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("", systemImage: "list.clipboard") {
-
+                    Menu("", systemImage: "list.clipboard") {
+                        Picker("", selection: Binding<Weekday?> {
+                            return viewModel.dayTasks?.useTemplate
+                        } set: { newValue in
+                            if newValue == nil {
+                                viewModel.dayTasks?.useTemplate = nil
+                            }
+                            templateToChange = newValue
+                        }) {
+                            ForEach(1...8, id: \.self) { i in
+                                Text(String(localized: .init("TimelineView.template\(i)")))
+                                    .tag(Weekday(rawValue: i))
+                            }
+                        }
+                        .labelsHidden()
+                        
+                        Divider()
+                        
+                        Button("TimelineView.clear", systemImage: "trash", role: .destructive) {
+                            showClearAlert.toggle()
+                        }
+                    }
+                    .confirmationDialog("TimelineView.confirmTemplate", item: $templateToChange, titleVisibility: .visible) { newValue in
+                        Button("confirm", role: .destructive) {
+                            viewModel.dayTasks?.applyTemplate(use: newValue, template: UserTemplates.shared(in: modelContext))
+                            templateToChange = nil
+                        }
+                        Button("cancel", role: .cancel) {
+                            templateToChange = nil
+                        }
+                    } message: { _ in
+                        Text("TimelineView.confirmTemplate.text")
+                    }
+                    .confirmationDialog("TimelineView.confirmClear", isPresented: $showClearAlert, titleVisibility: .visible) {
+                        Button("confirm", role: .destructive) {
+                            viewModel.dayTasks?.useTemplate = nil
+                            viewModel.dayTasks?.removeTasks(in: modelContext)
+                        }
+                        Button("cancel", role: .cancel) {
+                            showClearAlert.toggle()
+                        }
+                    } message: {
+                        Text("TimelineView.confirmClear.text")
+                    }
+                }
+                
+                if viewModel.dayState != .today {
+                    ToolbarSpacer(.fixed, placement: .topBarLeading)
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            viewModel.setCurrentDay(to: .today, context: modelContext)
+                            viewModel.displayedDays = Day.today.weeks
+                        } label: {
+                            Image(systemName: "arrowshape.turn.up.backward.badge.clock")
+                                .scaleEffect(x: viewModel.dayState == .before ? -1 : 1)
+                        }
                     }
                 }
 

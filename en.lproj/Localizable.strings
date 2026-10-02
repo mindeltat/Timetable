@@ -6,6 +6,7 @@
   
 */
 
+"untitled" = "Untitled";
 "AppTab.timeline" = "Timeline";
 "AppTab.template" = "Template";
 "AppTab.settings" = "Settings";
@@ -61,3 +62,20 @@
 "symbols.meetings" = "Meetings & Schedule";
 "symbols.personalCare" = "Personal Care";
 "symbols.others" = "Others";
+"TimelineView.template1" = "Use Sunday";
+"TimelineView.template2" = "Use Monday";
+"TimelineView.template3" = "Use Tueday";
+"TimelineView.template4" = "Use Wednesday";
+"TimelineView.template5" = "Use Thursday";
+"TimelineView.template6" = "Use Friday";
+"TimelineView.template7" = "Use Saturday";
+"TimelineView.template8" = "None";
+"TimelineView.confirmTemplate" = "Confirm to apply?";
+"TimelineView.confirmTemplate.text" = "Current tasks will not be saved.";
+"confirm" = "Confirm";
+"cancel" = "Cancel";
+"TimelineView.clear" = "Clear All";
+"TimelineView.confirmClear" = "Confirm to clear?";
+"TimelineView.confirmClear.text" = "Current tasks will not be saved.";
+"TaskDataEditingView.deleteConfirm" = "Confirm deletion?";
+"TaskDataEditingView.deleteConfirm.text" = "This action cannot be revoked.";
