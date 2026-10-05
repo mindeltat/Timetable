@@ -194,7 +194,7 @@ struct TimeOfDay: Hashable, Codable, Comparable {
 
 extension Int {
     var minutesDescription: String {
-        if self <= 60 {
+        if self < 60 {
             return "\(self) \(String(localized: .init("minute")))"
         }
         if self % 60 == 0 {
@@ -204,7 +204,7 @@ extension Int {
     }
     
     var minutesShortDescription: String {
-        if self <= 60 {
+        if self < 60 {
             return "\(self)m"
         }
         if self % 60 == 0 {
@@ -215,10 +215,18 @@ extension Int {
 }
 
 // MARK: - ImageType
-
-enum ImageType: Codable, Hashable {
+ 
+nonisolated enum ImageType: Codable, Hashable, Equatable {
     case system(name: String)
     case file(path: String)
+}
+
+enum NotificationSound: String, Codable {
+    case `default`
+    
+    var sound: UNNotificationSound {
+        return .default
+    }
 }
 
 // MARK: - TaskData
@@ -237,7 +245,9 @@ final class TaskData {
     var preparationTime: Int
     
     var notificationID: String
-    var hasScheduledNotification: Bool = false
+    @Attribute(originalName: "hasScheduledNotification")
+    var notification: Bool
+    var notificationSound: NotificationSound?
     var isOnBadWeather: Bool
     var badWeatherAheadTime: Int
     var effort: Int
@@ -257,7 +267,9 @@ final class TaskData {
         isOnBadWeather: Bool = false,
         badWeatherAheadTime: Int = 0,
         effort: Int = 1,
-        tags: [String] = []
+        tags: [String] = [],
+        notification: Bool = true,
+        notificationSound: NotificationSound? = .default
     ) {
         self.title = title
         self.content = content
@@ -272,6 +284,8 @@ final class TaskData {
         self.id = UUID().uuidString
         self.badWeatherAheadTime = badWeatherAheadTime
         self.tags = tags
+        self.notification = notification
+        self.notificationSound = notificationSound
     }
     
     convenience init(copying other: TaskData) {
@@ -286,7 +300,9 @@ final class TaskData {
             isOnBadWeather: false,
             badWeatherAheadTime: other.badWeatherAheadTime,
             effort: other.effort,
-            tags: other.tags
+            tags: other.tags,
+            notification: other.notification,
+            notificationSound: other.notificationSound
         )
     }
     
@@ -301,6 +317,23 @@ final class TaskData {
         self.badWeatherAheadTime = other.badWeatherAheadTime
         self.effort = other.effort
         self.tags = other.tags
+        self.notification = other.notification
+        self.notificationSound = other.notificationSound
+    }
+    
+    func equalsTo(_ other: TaskData) -> Bool {
+        return self.title == other.title &&
+            self.content == other.content &&
+            self.theme == other.theme &&
+            self.icon == other.icon &&
+            self.startTime == other.startTime &&
+            self.endTime == other.endTime &&
+            self.preparationTime == other.preparationTime &&
+            self.badWeatherAheadTime == other.badWeatherAheadTime &&
+            self.effort == other.effort &&
+            self.tags == other.tags &&
+            self.notification == other.notification &&
+            self.notificationSound == other.notificationSound
     }
     
     var startTimeOfDay: TimeOfDay {
@@ -343,6 +376,7 @@ final class TaskData {
     
     func scheduleNotification() {
         guard let day = self.day else { return }
+        guard notification else { return }
         
         let today = Day.today
         
@@ -351,9 +385,8 @@ final class TaskData {
         }
     }
     
-    func uncheckedScheduleNotification() {
+    private func uncheckedScheduleNotification() {
         guard let day = self.day else { return }
-        
         cancelNotification()
         
         var components = DateComponents()
@@ -378,6 +411,7 @@ final class TaskData {
         
         let content = UNMutableNotificationContent()
         content.title = title
+        content.sound = notificationSound?.sound
         
         let prepare = preparationTime == 0 ? "" : "\(String(localized: .init("PreparationContentView.advance1"))) \(preparationTime.minutesDescription) \(String(localized: .init("PreparationContentView.advance2")))"
         let tagStr = tags.isEmpty ? "" : "\n" + tags.joined(separator: " ")
@@ -385,14 +419,11 @@ final class TaskData {
         
         let request = UNNotificationRequest(identifier: notificationID, content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request)
-        
-        self.hasScheduledNotification = true
     }
     
     func cancelNotification() {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [notificationID])
-        self.hasScheduledNotification = false
     }
 }
 
@@ -498,6 +529,12 @@ final class DayTasks {
         context.insert(newDay)
         try? context.save()
         return newDay
+    }
+    
+    static func scheduleNextThreeDaysNotification(template: UserTemplates, in context: ModelContext) {
+        DayTasks.getOrCreate(for: .today, template: .shared(in: context), in: context)
+        DayTasks.getOrCreate(for: .today.next, template: .shared(in: context), in: context)
+        DayTasks.getOrCreate(for: .today.next.next, template: .shared(in: context), in: context)
     }
     
     func removeTasks(in context: ModelContext) {

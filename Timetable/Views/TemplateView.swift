@@ -9,6 +9,7 @@ import SwiftUI
 import SwiftData
 
 struct TemplateView: View {
+    @CodableStorage("settings") private var settings = Settings()
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = TimelineViewModel()
     @State private var isAddingTask: Bool = false
@@ -29,10 +30,10 @@ struct TemplateView: View {
                 }
             }
             .sheet(isPresented: $isAddingTask) {
-                let i: Int? = viewModel.firstAvailableIndexAfter(viewModel.dayTasks?.tasks.last?.endTime ?? 359)
+                let i: Int? = viewModel.firstAvailableIndexAfter(viewModel.sortedTasks.last?.endTime ?? 359)
                 if let i {
                     TaskEditingView(
-                        task: .init(startTime: i * 5, endTime: i * 5 + 1),
+                        task: .init(startTime: i * 5, endTime: i * 5 + 1, notification: settings.defaultNotification, notificationSound: settings.defaultNotificationSound),
                         existed: false
                     )
                 }
@@ -66,6 +67,10 @@ struct TemplateView: View {
             .navigationTitle("AppTab.template")
             .safeSetNavigationTitleDisplayModeToInline()
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("AppTab.template")
+                        .fontWeight(.semibold)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("", systemImage: "plus") {
                         if viewModel.firstAvailableIndexAfterNow != nil {

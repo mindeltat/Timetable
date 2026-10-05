@@ -19,6 +19,8 @@ struct TaskEditingView: View {
     @State var copiedTask: TaskData
     let existed: Bool
     
+    @State var isOnCancel: Bool = false
+    
     init(task: TaskData, existed: Bool = true) {
         self.task = task
         self.copiedTask = TaskData(copying: task)
@@ -32,6 +34,12 @@ struct TaskEditingView: View {
                 vm.dayTasks!.useTemplate = nil
                 task.cancelNotification()
                 modelContext.delete(task)
+                
+                if isTemplate {
+                    DayTasks.getOrCreate(for: .today.next, template: .shared(in: modelContext), in: modelContext)
+                    DayTasks.getOrCreate(for: .today.next.next, template: .shared(in: modelContext), in: modelContext)
+                }
+                
                 dismiss()
             } onSave: {
                 let changed = task.startTime != copiedTask.startTime || task.preparationTime != copiedTask.preparationTime
@@ -48,12 +56,32 @@ struct TaskEditingView: View {
                 }
                 
                 if isTemplate {
-                    DayTasks.getOrCreate(for: .today.next, template: .shared(in: modelContext), in: modelContext)
-                    DayTasks.getOrCreate(for: .today.next.next, template: .shared(in: modelContext), in: modelContext)
+                    DayTasks.scheduleNextThreeDaysNotification(template: UserTemplates.shared(in: modelContext), in: modelContext)
                 }
                 
                 try? modelContext.save()
                 dismiss()
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("", systemImage: "xmark") {
+                        if copiedTask.equalsTo(task) {
+                            dismiss()
+                        } else {
+                            isOnCancel.toggle()
+                        }
+                    }
+                    .confirmationDialog("TaskEditingView.cancel", isPresented: $isOnCancel) {
+                        Button("confirm", role: .destructive) {
+                            dismiss()
+                        }
+                        Button("cancel", role: .cancel) {
+                            isOnCancel = false
+                        }
+                    } message: {
+                        Text("TaskEditingView.cancelText")
+                    }
+                }
             }
         }
         .presentationDetents([.large])
@@ -104,6 +132,7 @@ struct TaskDataEditingThemeView: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var task: TaskData
     @State var scrollId: String?
+    @State var bottomScrollId: String?
     
     var body: some View {
         NavigationStack {
@@ -160,10 +189,19 @@ struct TaskDataEditingThemeView: View {
                 scrollId = "symbols.recents"
             }
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("TaskDataEditingThemeView.title")
+                        .fontWeight(.semibold)
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Button("", systemImage: "xmark") {
                         dismiss()
                     }
+                }
+            }
+            .onChange(of: scrollId) { _, new in
+                withAnimation {
+                    bottomScrollId = new
                 }
             }
             .safeAreaBar(edge: .top) {
@@ -221,6 +259,7 @@ struct TaskDataEditingThemeView: View {
                     }
                     .padding(.all, 8)
                 }
+                .scrollPosition(id: $bottomScrollId, anchor: .center)
                 .background {
                     Capsule()
                         .fill(.clear)
@@ -293,7 +332,7 @@ struct TaskDataEditingTimeView: View {
                                 .tag(i * 5)
                         }
                         
-                        if i != indexes.count - 1 {
+                        if index != indexes.count - 1 {
                             if i * 5 < task.startTime && indexes[index + 1] * 5 > task.startTime {
                                 Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description)")
                                     .bold()
@@ -381,6 +420,7 @@ struct TaskDataEditingTimeView: View {
                                 }
                         }
                         .buttonStyle(.plain)
+                        .padding(.leading, 4)
                     }
                     .padding(.all, 8)
                     .background {
@@ -424,6 +464,10 @@ struct TaskDataEditingTimeView: View {
                         dismiss()
                     }
                 }
+                ToolbarItem(placement: .principal) {
+                    Text("TaskDataEditingTimeView.title")
+                        .fontWeight(.semibold)
+                }
             }
             .sheet(isPresented: $customize) {
                 TaskDataEditingTimeCustomizeView(task: task)
@@ -463,6 +507,11 @@ struct TaskDataEditingTimeCustomizeView: View {
                         task.endTime = task.startTime + maxD
                     }
                     
+                    let maxP = vm.availableDuration(before: task.startTime)
+                    if task.preparationTime > maxP {
+                        task.preparationTime = maxP
+                    }
+                    
                     endHoursAndMinutes = vm.availableHoursAndMinutes(after: task.startTime, exclude: index)
                 }) {
                     ForEach(hoursAndMinutes.keys.sorted(), id: \.self) { i in
@@ -487,6 +536,11 @@ struct TaskDataEditingTimeCustomizeView: View {
                     let maxD = vm.availableDuration(after: task.startTime)
                     if task.durationWithoutPreparation > maxD {
                         task.endTime = task.startTime + maxD
+                    }
+                    
+                    let maxP = vm.availableDuration(before: task.startTime)
+                    if task.preparationTime > maxP {
+                        task.preparationTime = maxP
                     }
                     
                     endHoursAndMinutes = vm.availableHoursAndMinutes(after: task.startTime, exclude: index)
@@ -543,6 +597,10 @@ struct TaskDataEditingTimeCustomizeView: View {
             .navigationTitle("TaskDataEditingTimeCustomizeView.title")
             .safeSetNavigationTitleDisplayModeToInline()
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("TaskDataEditingTimeCustomizeView.title")
+                        .fontWeight(.semibold)
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Button("", systemImage: "xmark") {
                         dismiss()
@@ -565,27 +623,29 @@ struct TaskDataEditingPreparationView: View {
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack {
-                    Picker("", selection: $task.preparationTime) {
-                        Text("TaskDataEditingView.noPreparation")
-                            .tag(0)
-                        
-                        let availableTime = vm.availableDuration(before: task.startTime, exclude: index)
-                        if availableTime != 0 {
-                            ForEach(1...availableTime, id: \.self) { i in
-                                Text(i.minutesDescription)
-                                    .tag(i)
-                            }
+            VStack {
+                Picker("", selection: $task.preparationTime) {
+                    Text("TaskDataEditingView.noPreparation")
+                        .tag(0)
+                    
+                    let availableTime = vm.availableDuration(before: task.startTime, exclude: index)
+                    if availableTime != 0 {
+                        ForEach(1...availableTime, id: \.self) { i in
+                            Text(i.minutesDescription)
+                                .tag(i)
                         }
                     }
-                    .labelsHidden()
-                    .pickerStyle(.wheel)
-                    Spacer()
                 }
-                .padding()
+                .labelsHidden()
+                .pickerStyle(.wheel)
+                Spacer()
             }
+            .padding()
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("TaskDataEditingPreparationView.title")
+                        .fontWeight(.semibold)
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Button("", systemImage: "xmark") {
                         dismiss()
@@ -593,6 +653,62 @@ struct TaskDataEditingPreparationView: View {
                 }
             }
             .navigationTitle("TaskDataEditingPreparationView.title")
+            .safeSetNavigationTitleDisplayModeToInline()
+        }
+    }
+}
+
+struct TaskDataEditingNotificationView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Bindable var task: TaskData
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Toggle(isOn: Binding {
+                    return task.notification
+                } set: { newValue in
+                    let b = newValue == task.notification
+                    task.notification = newValue
+                    if !b {
+                        task.scheduleNotification()
+                    }
+                }) {
+                    Label("TaskDataEditingNotificationView.notification", systemImage: "bell.fill")
+                }
+                Toggle(isOn: Binding {
+                    return task.notificationSound != nil
+                } set: { newValue in
+                    let b: Bool
+                    if newValue {
+                        b = task.notificationSound == .default
+                        task.notificationSound = .default
+                    } else {
+                        b = task.notificationSound == nil
+                        task.notificationSound = nil
+                    }
+                    if !b {
+                        task.scheduleNotification()
+                    }
+                }) {
+                    Label("TaskDataEditingNotificationView.sound", systemImage: "waveform.mid")
+                        .foregroundStyle(task.notification ? .primary : .secondary)
+                }
+                .disabled(!task.notification)
+            }
+            .formStyle(.grouped)
+            .navigationTitle("TaskDataEditingNotificationView.title")
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("TaskDataEditingNotificationView.title")
+                        .fontWeight(.semibold)
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("", systemImage: "xmark") {
+                        dismiss()
+                    }
+                }
+            }
             .safeSetNavigationTitleDisplayModeToInline()
         }
     }
@@ -606,7 +722,6 @@ struct TagView: View {
         Text(tag)
             .foregroundStyle(theme.fgColor)
             .fontWeight(.semibold)
-            .fontDesign(.rounded)
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
             .background {
@@ -621,45 +736,81 @@ struct TagView: View {
 struct TagEditingView: View {
     @Binding var tag: String
     let theme: Theme
-    
     let onDeletion: () -> Void
-    
+
+    @FocusState.Binding var focusedIndex: Int?
+    let index: Int
+
     var body: some View {
         HStack(spacing: 4) {
-            TextField("TaskDataEditingTagsView.newTag", text: $tag, prompt: Text("TaskDataEditingTagsView.newTag").foregroundStyle(theme.fgColor.opacity(0.4)))
+            TextField(
+                "TaskDataEditingTagsView.newTag",
+                text: $tag,
+                prompt: Text("TaskDataEditingTagsView.newTag")
+                    .foregroundStyle(theme.fgColor.opacity(0.4))
+            )
+            .focused($focusedIndex, equals: index)
+
             Button {
-                onDeletion()
+                withAnimation {
+                    onDeletion()
+                }
             } label: {
                 Image(systemName: "xmark.circle.fill")
             }
         }
         .foregroundStyle(theme.fgColor)
         .fontWeight(.semibold)
-        .fontDesign(.rounded)
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
         .background {
-            Capsule()
-                .fill(theme.bgColorNoOpacity)
+            Capsule().fill(theme.bgColorNoOpacity)
         }
         .lineLimit(1)
     }
 }
 
 struct TaskDataEditingTagsView: View {
-    @Bindable var task: TaskData
-    
+    let task: TaskData
+    @FocusState private var focusedIndex: Int?
+
     var body: some View {
         FlowLayout {
-            let _ = print(task.tags)
-            ForEach(Array($task.tags.enumerated()), id: \.offset) { index, tag in
-                TagEditingView(tag: tag, theme: task.theme) {
-                    task.tags.remove(at: index)
-                }
+            ForEach(task.tags.indices, id: \.self) { index in
+                TagEditingView(
+                    tag: Binding(
+                        get: {
+                            task.tags.indices.contains(index) ? task.tags[index] : ""
+                        },
+                        set: { newValue in
+                            guard task.tags.indices.contains(index) else { return }
+                            task.tags[index] = newValue
+                        }
+                    ),
+                    theme: task.theme,
+                    onDeletion: {
+                        if let f = focusedIndex {
+                            if f == index {
+                                focusedIndex = nil
+                            } else if f > index {
+                                focusedIndex = f - 1
+                            }
+                        }
+                        task.tags.remove(at: index)
+                    },
+                    focusedIndex: $focusedIndex,
+                    index: index
+                )
             }
-            
+
             Button {
-                task.tags.append("")
+                withAnimation {
+                    task.tags.append("")
+                }
+
+                DispatchQueue.main.async {
+                    focusedIndex = task.tags.count - 1
+                }
             } label: {
                 HStack(spacing: 4) {
                     Text("TaskDataEditingTagsView.new")
@@ -672,8 +823,7 @@ struct TaskDataEditingTagsView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
             .background {
-                Capsule()
-                    .fill(task.theme.fgColor)
+                Capsule().fill(task.theme.fgColor)
             }
             .lineLimit(1)
         }
@@ -687,8 +837,38 @@ struct TaskDataEditingView: View {
         case theme
         case time
         case preparation
+        case notification
         
         var id: String { rawValue }
+    }
+    
+    enum NotificationState: String {
+        case none
+        case notification
+        case notificationAndSound
+        
+        init(notification: Bool, sound: NotificationSound?) {
+            if notification {
+                if sound == nil {
+                    self = .notification
+                    return
+                }
+                self = .notificationAndSound
+                return
+            }
+            self = .none
+        }
+        
+        var icon: String {
+            switch self {
+            case .none:
+                return "bell.slash.fill"
+            case .notification:
+                return  "bell.fill"
+            case .notificationAndSound:
+                return "bell.badge.waveform.fill"
+            }
+        }
     }
     
     @Bindable var task: TaskData
@@ -731,6 +911,24 @@ struct TaskDataEditingView: View {
                         } else {
                             Text("\(task.preparationTime.minutesDescription) \(Text("TaskDataEditingView.inAdvance"))")
                         }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                
+                Button {
+                    secondaryMenu = .notification
+                } label: {
+                    let state = NotificationState(notification: task.notification, sound: task.notificationSound)
+                    HStack {
+                        Image(systemName: state.icon)
+                            .imageScale(.large)
+                            .foregroundStyle(task.theme.fgColor)
+                        Text(String(localized: .init("TaskDataEditingView.notification.\(state.rawValue)")))
                         Spacer()
                         Image(systemName: "chevron.right")
                             .fontWeight(.semibold)
@@ -782,7 +980,10 @@ struct TaskDataEditingView: View {
                     .presentationDetents([.medium])
             case .preparation:
                 TaskDataEditingPreparationView(task: task)
-                    .presentationDetents([.medium])
+                    .presentationDetents([.fraction(0.36)])
+            case .notification:
+                TaskDataEditingNotificationView(task: task)
+                    .presentationDetents([.fraction(0.3)])
             }
         }
         .safeAreaBar(edge: .top) {
@@ -792,11 +993,6 @@ struct TaskDataEditingView: View {
         .scrollEdgeEffectStyle(.hard, for: .top)
         .formStyle(.grouped)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("", systemImage: "xmark") {
-                    dismiss()
-                }
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("", systemImage: "paintpalette") {
                     secondaryMenu = .theme

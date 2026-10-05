@@ -57,6 +57,7 @@ struct TimelineStackView: View {
             }
         }
         .scrollTargetLayout()
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -312,6 +313,7 @@ final class TimelineViewModel {
 }
 
 struct TimelineView: View {
+    @CodableStorage("settings") private var settings = Settings()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = TimelineViewModel()
@@ -337,10 +339,10 @@ struct TimelineView: View {
                 }
             }
             .sheet(isPresented: $isAddingTask) {
-                let i: Int? = vm.dayState == .today ? viewModel.firstAvailableIndexAfterNow : viewModel.firstAvailableIndexAfter(viewModel.dayTasks?.tasks.last?.endTime ?? 359)
+                let i: Int? = vm.dayState == .today ? viewModel.firstAvailableIndexAfterNow : viewModel.firstAvailableIndexAfter(viewModel.sortedTasks.last?.endTime ?? 359)
                 if let i {
                     TaskEditingView(
-                        task: .init(startTime: i * 5, endTime: i * 5 + 1),
+                        task: .init(startTime: i * 5, endTime: i * 5 + 1, notification: settings.defaultNotification, notificationSound: settings.defaultNotificationSound),
                         existed: false
                     )
                 }
@@ -411,6 +413,10 @@ struct TimelineView: View {
             .navigationTitle(viewModel.currentDay.localizedDescription)
             .safeSetNavigationTitleDisplayModeToInline()
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(viewModel.currentDay.localizedDescription)
+                        .fontWeight(.semibold)
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Menu("", systemImage: "list.clipboard") {
                         Picker("", selection: Binding<Weekday?> {

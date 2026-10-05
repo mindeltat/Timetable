@@ -182,12 +182,14 @@ struct TimelineTaskRow: View {
                             .frame(maxWidth: .infinity, minHeight: prepMinHeight)
                             .background(task.theme.bgColorNoOpacity)
                             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { prepHeight = $0 }
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     
                     TaskBodyContent(task: task, lastingMinutes: bodyMinutes, taskIsDone: taskIsDone)
                         .frame(maxWidth: .infinity, minHeight: bodyMinHeight)
                         .background(task.theme.bgColor)
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bodyHeight = $0 }
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -395,15 +397,18 @@ struct TaskBodyContent: View {
                 VStack(alignment: .leading) {
                     Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description) (\(lastingMinutes.minutesDescription))")
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     if taskIsDone {
                         Text("\(task.title) \(Image(systemName: "checkmark.circle.fill"))")
                             .font(.title3)
                             .bold()
                             .foregroundStyle(task.theme.fgColor)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
                         Text(task.title)
                             .font(.title3)
                             .bold()
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer()
@@ -420,15 +425,18 @@ struct TaskBodyContent: View {
                 }
                 if !task.tags.isEmpty && task.content != "" {
                     Color.clear
-                        .frame(height: 6)
+                        .frame(height: 4)
                 }
                 if task.content != "" {
                     Text(task.content)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
         .padding(.horizontal, .horizontalTextPadding)
-        .padding(.vertical, .verticalTextPadding)
+        .padding(.vertical, .verticalTextPadding + 4)
+        .layoutPriority(1)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -438,6 +446,7 @@ struct PreparationContentView: View {
     var body: some View {
         HStack {
             Text("\(Image(systemName: "clock.badge.exclamationmark")) \(Text("PreparationContentView.advance1")) \(task.preparationTime.minutesDescription) \(Text("PreparationContentView.advance2"))")
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, .horizontalTextPadding)
         .padding(.vertical, .verticalTextPadding)
@@ -445,6 +454,5 @@ struct PreparationContentView: View {
 }
 
 #Preview {
-    TimelineTaskRow(task: .init(title: "Morning Jogging", content: "xxx", theme: .green, startTime: 60 * 6 + 30, endTime: 60 * 8, preparationTime: 10), dayState: .today)
-        .padding()
+    TimelineTaskRow(task: .init(title: "Morning Jogging", content: "xxx\nxxx\nxxx\nxxx", theme: .green, startTime: 60 * 6 + 30, endTime: 60 * 8, preparationTime: 10), dayState: .today)
 }
