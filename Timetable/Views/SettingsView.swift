@@ -137,6 +137,7 @@ extension Int: @retroactive Identifiable {
 }
 
 struct PresetsSettingsView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @CodableStorage("settings") private var settings = Settings()
     @State private var durationEditingIndex: Int? = nil
     
@@ -153,7 +154,13 @@ struct PresetsSettingsView: View {
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 4)
                                 .background {
-                                    Capsule().fill(.accentText)
+                                    if colorScheme == .light {
+                                        Capsule()
+                                            .fill(.accentText)
+                                    } else {
+                                        Capsule()
+                                            .fill(.quinary)
+                                    }
                                 }
                                 .lineLimit(1)
                         }

@@ -26,38 +26,65 @@ struct TimelineStackView: View {
             ? TimeOfDay(hour: nowMinutes / 60, minute: nowMinutes % 60)
             : nil
 
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
-                let isLast = index == tasks.count - 1
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
+                    let isLast = index == tasks.count - 1
 
-                let showEndTime: Bool = {
-                    if isLast { return true }
-                    let next = tasks[index + 1]
-                    let nextTop = next.topTime(dayState: dayState, nowMinutes: nowMinutes)
-                    return task.endTimeOfDay.minutes(to: nextTop) >= 10
-                }()
+                    let showEndTime: Bool = {
+                        if isLast { return true }
+                        let next = tasks[index + 1]
+                        let nextTop = next.topTime(dayState: dayState, nowMinutes: nowMinutes)
+                        return task.endTimeOfDay.minutes(to: nextTop) >= 10
+                    }()
 
-                TimelineTaskRow(
-                    task: task,
-                    dayState: dayState,
-                    showEndTime: showEndTime,
-                    nowTime: nowTime
-                )
-                .id(task.id)
-                .environment(\.currentTaskIndex, index)
-
-                if index < tasks.count - 1 {
-                    TimelineGapRow(
-                        currentTask: task,
-                        nextTask: tasks[index + 1],
-                        dayState: dayState
+                    TimelineTaskRow(
+                        task: task,
+                        dayState: dayState,
+                        showEndTime: showEndTime,
+                        nowTime: nowTime,
+                        layoutOrder: index * 2
                     )
-                    .id("gap-\(task.id)")
+                    .id(task.id)
+                    .environment(\.currentTaskIndex, index)
+
+                    if index < tasks.count - 1 {
+                        TimelineGapRow(
+                            currentTask: task,
+                            nextTask: tasks[index + 1],
+                            dayState: dayState,
+                            layoutOrder: index * 2 + 1
+                        )
+                        .id("gap-\(task.id)")
+                    }
                 }
             }
+            .scrollTargetLayout()
+            .frame(maxWidth: .infinity)
         }
-        .scrollTargetLayout()
-        .frame(maxWidth: .infinity)
+        .overlayPreferenceValue(TimelineRowLayoutKey.self, alignment: .topLeading) { layouts in
+            TimelineTimeLabels(entries: TimelineStackView.globalEntries(from: layouts))
+                .frame(width: 60)
+                .frame(maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    static func globalEntries(from layouts: [TimelineRowLayout]) -> [TimelineTimeLabels.Entry] {
+        let sorted = layouts.sorted { $0.order < $1.order }
+        var offset: CGFloat = 0
+        var result: [TimelineTimeLabels.Entry] = []
+        for layout in sorted {
+            for label in layout.labels {
+                result.append(.init(
+                    time: label.time,
+                    y: offset + label.y,
+                    priority: label.priority,
+                    style: label.style
+                ))
+            }
+            offset += layout.height
+        }
+        return result
     }
 }
 

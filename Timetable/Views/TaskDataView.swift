@@ -39,7 +39,7 @@ func minutesSinceStartOfDay(_ date: Date = Date(), calendar: Calendar = .current
 struct TaskDataImageView: View {
     let image: ImageType
     let theme: Theme
-    
+
     var body: some View {
         switch image {
         case .system(let name):
@@ -54,29 +54,144 @@ struct TaskDataImageView: View {
     }
 }
 
+struct TimelineTimeLabels: View {
+    struct Entry {
+        let time: TimeOfDay
+        let y: CGFloat
+        let priority: Int
+        let style: Style
+    }
+    
+    struct FilteredEntry {
+        let entry: Entry
+        var show: Bool = false
+    }
+
+    enum Style {
+        case now
+        case taskStart
+        case prepTime
+        case taskEnd
+        case hour
+    }
+
+    let entries: [Entry]
+    var minGap: CGFloat = .bodyFontSize * 1.5
+
+    private var filtered: [FilteredEntry] {
+        var result = entries.map { FilteredEntry(entry: $0) }
+        guard !result.isEmpty else { return result }
+
+        let sortedIndices = entries.indices.sorted {
+            let lhs = entries[$0]
+            let rhs = entries[$1]
+
+            if lhs.y != rhs.y {
+                return lhs.y < rhs.y
+            }
+            if lhs.priority != rhs.priority {
+                return lhs.priority > rhs.priority
+            }
+            return $0 < $1
+        }
+
+        var visibleIndices: [Int] = []
+
+        for index in sortedIndices {
+            let current = entries[index]
+
+            guard let lastVisibleIndex = visibleIndices.last else {
+                visibleIndices.append(index)
+                continue
+            }
+
+            let lastVisible = entries[lastVisibleIndex]
+            let distance = current.y - lastVisible.y
+
+            if distance >= minGap {
+                visibleIndices.append(index)
+            } else if current.priority <= lastVisible.priority {
+                visibleIndices[visibleIndices.count - 1] = index
+            } else {
+                continue
+            }
+        }
+
+        for index in visibleIndices {
+            result[index].show = true
+        }
+
+        return result
+    }
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.clear
+
+            ForEach(Array(filtered.enumerated()), id: \.offset) { _, item in
+                if item.show {
+                    Text(item.entry.time.description)
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .foregroundStyle(shapeStyle(for: item.entry.style))
+                        .offset(y: item.entry.y - .bodyFontSize / 2)
+                        .frame(width: 60)
+                }
+            }
+        }
+        .frame(width: 60, alignment: .topTrailing)
+    }
+
+    private func shapeStyle(for style: Style) -> AnyShapeStyle {
+        switch style {
+        case .now:
+            return AnyShapeStyle(.primary)
+        case .taskStart, .taskEnd, .prepTime:
+            return AnyShapeStyle(.secondary)
+        case .hour:
+            return AnyShapeStyle(.tertiary)
+        }
+    }
+}
+
+struct TimelineRowLayout {
+    let order: Int
+    let height: CGFloat
+    let labels: [TimelineTimeLabels.Entry]
+}
+
+struct TimelineRowLayoutKey: PreferenceKey {
+    static let defaultValue: [TimelineRowLayout] = []
+    static func reduce(value: inout [TimelineRowLayout], nextValue: () -> [TimelineRowLayout]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
 struct TimelineTaskRow: View {
     let task: TaskData
     let dayState: DayState
     let minutesSinceStart: Int
     var showEndTime: Bool = true
     var nowTime: TimeOfDay? = nil
-    
+    let layoutOrder: Int
+
     @CodableStorage("settings") private var settings = Settings()
     private var minutesPerPt: CGFloat {
         settings.minutesPerPt
     }
-    
-    init(task: TaskData, dayState: DayState, showEndTime: Bool = true, nowTime: TimeOfDay? = nil) {
+
+    init(task: TaskData, dayState: DayState, showEndTime: Bool = true, nowTime: TimeOfDay? = nil, layoutOrder: Int) {
         self.task = task
         self.dayState = dayState
         self.minutesSinceStart = minutesSinceStartOfDay()
         self.showEndTime = showEndTime
         self.nowTime = nowTime
+        self.layoutOrder = layoutOrder
     }
 
     @State private var prepHeight: CGFloat = 0
     @State private var bodyHeight: CGFloat = 0
-    
+
     @State private var isEditing: Bool = false
 
     private var prepMinutes: Int { task.preparationTime }
@@ -88,12 +203,20 @@ struct TimelineTaskRow: View {
     private var bodyActual: CGFloat { max(bodyMinHeight, bodyHeight) }
     private var totalActual: CGFloat { prepActual + bodyActual }
 
+    private var hasPrep: Bool {
+        prepMinutes > 0
+    }
+
+    private var prepH: CGFloat {
+        hasPrep ? prepActual : 0
+    }
+
     private var prepStartTime: TimeOfDay {
         let m = task.startTime - prepMinutes
         let wrapped = ((m % 1440) + 1440) % 1440
         return TimeOfDay(hour: wrapped / 60, minute: wrapped % 60)
     }
-    
+
     private var preparationIsDone: Bool {
         switch dayState {
         case .before:
@@ -104,7 +227,7 @@ struct TimelineTaskRow: View {
             return minutesSinceStart >= task.startTime
         }
     }
-    
+
     private var taskIsDone: Bool {
         switch dayState {
         case .before:
@@ -115,76 +238,111 @@ struct TimelineTaskRow: View {
             return minutesSinceStart >= task.endTime
         }
     }
-    
+
     private var nowMinutes: Int? {
         guard dayState == .today else { return nil }
         return minutesSinceStartOfDay()
+    }
+
+    private func pixelY(forMinute minute: Int) -> CGFloat? {
+        let earliest = hasPrep ? (task.startTime - prepMinutes) : task.startTime
+        guard minute >= earliest && minute < task.endTime else { return nil }
+        if hasPrep && minute < task.startTime {
+            let offset = minute - (task.startTime - prepMinutes)
+            return prepH * CGFloat(offset) / CGFloat(max(prepMinutes, 1))
+        } else {
+            let offset = minute - task.startTime
+            return prepH + bodyActual * CGFloat(offset) / CGFloat(max(bodyMinutes, 1))
+        }
+    }
+
+    private var labelEntries: [TimelineTimeLabels.Entry] {
+        var rv: [TimelineTimeLabels.Entry] = []
+        let bodyH = bodyActual
+
+        if hasPrep {
+            for hour in interiorWholeHours(from: prepStartTime, to: task.startTimeOfDay) {
+                let offset = hour.minutesSinceMidnight - (task.startTime - prepMinutes)
+                let frac = CGFloat(offset) / CGFloat(max(prepMinutes, 1))
+                rv.append(.init(time: hour, y: prepH * frac, priority: 4, style: .hour))
+            }
+        }
+        for hour in interiorWholeHours(from: task.startTimeOfDay, to: task.endTimeOfDay) {
+            let offset = hour.minutesSinceMidnight - task.startTime
+            let frac = CGFloat(offset) / CGFloat(max(bodyMinutes, 1))
+            rv.append(.init(time: hour, y: prepH + bodyH * frac, priority: 4, style: .hour))
+        }
+
+        if hasPrep {
+            rv.append(.init(time: prepStartTime, y: 0, priority: 2, style: .prepTime))
+        }
+
+        rv.append(.init(time: task.startTimeOfDay, y: prepH, priority: 1, style: .taskStart))
+
+        if showEndTime {
+            rv.append(.init(time: task.endTimeOfDay, y: prepH + bodyH, priority: 3, style: .taskEnd))
+        }
+
+        if let now = nowTime, let nowY = pixelY(forMinute: now.minutesSinceMidnight) {
+            rv.append(.init(time: now, y: nowY, priority: 0, style: .now))
+        }
+
+        return rv
     }
 
     var body: some View {
         Button {
             isEditing.toggle()
         } label: {
-            HStack(alignment: .bottom, spacing: 0) {
-                VStack(spacing: 0) {
-                    if prepMinutes > 0 && !preparationIsDone {
-                        TimelineTimeLabels(
-                            topTime: prepStartTime,
-                            bottomTime: task.startTimeOfDay,
-                            height: prepActual,
-                            showTop: true,
-                            showBottom: false,
-                            nowTime: nowTime
-                        )
-                    }
-                    TimelineTimeLabels(
-                        topTime: task.startTimeOfDay,
-                        bottomTime: task.endTimeOfDay,
-                        height: bodyActual,
-                        showTop: true,
-                        showBottom: showEndTime,
-                        nowTime: nowTime
-                    )
-                }
-                .frame(width: 60)
-                
+            HStack(alignment: .top, spacing: 0) {
+                Color.clear
+                    .frame(width: 60)
+
                 if let now = nowMinutes {
-                    if now <= task.startTime - task.preparationTime {
-                        Rectangle()
-                            .fill(task.theme.bgColorNoOpacity)
-                            .frame(width: 8, height: totalActual)
-                    } else if now >= task.endTime {
-                        Rectangle()
-                            .fill(task.theme.fgColor)
-                            .frame(width: 8, height: totalActual)
-                    } else {
-                        let pastFraction = CGFloat(now - task.startTime + task.preparationTime) / CGFloat(task.preparationTime + bodyMinutes)
+                    if let nowY = pixelY(forMinute: now) {
                         VStack(spacing: 0) {
                             Rectangle()
                                 .fill(task.theme.fgColor)
-                                .frame(height: totalActual * pastFraction)
-                            
+                                .frame(height: nowY)
                             Rectangle()
                                 .fill(task.theme.bgColorNoOpacity)
-                                .frame(height: totalActual * (1 - pastFraction))
+                                .frame(height: max(0, totalActual - nowY))
                         }
                         .frame(width: 8)
+                    } else if now < (hasPrep ? task.startTime - prepMinutes : task.startTime) {
+                        Rectangle()
+                            .fill(task.theme.bgColorNoOpacity)
+                            .frame(width: 8, height: totalActual)
+                    } else {
+                        Rectangle()
+                            .fill(task.theme.fgColor)
+                            .frame(width: 8, height: totalActual)
                     }
                 } else {
                     Rectangle()
                         .fill(dayState == .before ? task.theme.fgColor : task.theme.bgColorNoOpacity)
                         .frame(width: 8, height: totalActual)
                 }
-                
+
                 VStack(spacing: 0) {
-                    if prepMinutes > 0 && !preparationIsDone {
-                        PreparationContentView(task: task)
-                            .frame(maxWidth: .infinity, minHeight: prepMinHeight)
-                            .background(task.theme.bgColorNoOpacity)
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { prepHeight = $0 }
-                            .fixedSize(horizontal: false, vertical: true)
+                    if hasPrep {
+                        Group {
+                            if preparationIsDone {
+                                Color.clear
+                                    .frame(maxWidth: .infinity, minHeight: prepMinHeight)
+                                    .background(task.theme.bgColorNoOpacity)
+                                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { prepHeight = $0 }
+                                    .fixedSize(horizontal: false, vertical: true)
+                            } else {
+                                PreparationContentView(task: task)
+                                    .frame(maxWidth: .infinity, minHeight: prepMinHeight)
+                                    .background(task.theme.bgColorNoOpacity)
+                                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { prepHeight = $0 }
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
                     }
-                    
+
                     TaskBodyContent(task: task, lastingMinutes: bodyMinutes, taskIsDone: taskIsDone)
                         .frame(maxWidth: .infinity, minHeight: bodyMinHeight)
                         .background(task.theme.bgColor)
@@ -194,6 +352,9 @@ struct TimelineTaskRow: View {
             }
         }
         .buttonStyle(.plain)
+        .preference(key: TimelineRowLayoutKey.self, value: [
+            TimelineRowLayout(order: layoutOrder, height: totalActual, labels: labelEntries)
+        ])
         .sheet(isPresented: $isEditing) {
             TaskEditingView(task: task, existed: true)
         }
@@ -209,6 +370,7 @@ struct TimelineGapRow: View {
     let currentTask: TaskData
     let nextTask: TaskData
     let dayState: DayState
+    let layoutOrder: Int
 
     private var gapStart: TimeOfDay { currentTask.endTimeOfDay }
     private var gapEnd: TimeOfDay {
@@ -227,24 +389,43 @@ struct TimelineGapRow: View {
         return minutesSinceStartOfDay()
     }
 
+    private var labelEntries: [TimelineTimeLabels.Entry] {
+        var rv: [TimelineTimeLabels.Entry] = []
+        let total = max(gapMinutes, 1)
+        let gapStartMin = gapStart.minutesSinceMidnight
+        let gapEndMin = gapEnd.minutesSinceMidnight
+
+        for hour in interiorWholeHours(from: gapStart, to: gapEnd) {
+            let offset = hour.minutesSinceMidnight - gapStartMin
+            let frac = CGFloat(offset) / CGFloat(total)
+            rv.append(.init(time: hour, y: gapHeight * frac, priority: 4, style: .hour))
+        }
+
+        if let now = nowMinutes {
+            if now >= gapStartMin && now < gapEndMin {
+                let offset = now - gapStartMin
+                let frac = CGFloat(offset) / CGFloat(total)
+                let nowTime = TimeOfDay(hour: now / 60, minute: now % 60)
+                rv.append(.init(time: nowTime, y: gapHeight * frac, priority: 0, style: .now))
+            }
+        }
+
+        return rv
+    }
+
     var body: some View {
         HStack(spacing: 0) {
-            TimelineTimeLabels(
-                topTime: gapStart,
-                bottomTime: gapEnd,
-                height: gapHeight,
-                showTop: false,
-                showBottom: false,
-                nowTime: nowMinutes.map {
-                    TimeOfDay(hour: $0 / 60, minute: $0 % 60)
-                }
-            )
+            Color.clear
+                .frame(width: 60)
 
             gapBar
 
             Spacer()
         }
         .frame(height: gapHeight)
+        .preference(key: TimelineRowLayoutKey.self, value: [
+            TimelineRowLayout(order: layoutOrder, height: gapHeight, labels: labelEntries)
+        ])
     }
 
     @ViewBuilder
@@ -302,86 +483,6 @@ struct TimelineGapRow: View {
                 )
                 .frame(width: 8)
         }
-    }
-}
-
-struct TimelineTimeLabels: View {
-    @CodableStorage("settings") private var settings = Settings()
-    private var minutesPerPt: CGFloat {
-        settings.minutesPerPt
-    }
-
-    let topTime: TimeOfDay
-    let bottomTime: TimeOfDay
-    let height: CGFloat
-    var showTop: Bool = true
-    var showBottom: Bool = true
-    var nowTime: TimeOfDay? = nil
-
-    private let minLabelPixelGap: CGFloat = 22
-
-    private func pixelDistance(from a: TimeOfDay, to b: TimeOfDay) -> CGFloat {
-        CGFloat(abs(a.minutesSinceMidnight - b.minutesSinceMidnight)) / minutesPerPt
-    }
-
-    private var interiorHours: [TimeOfDay] {
-        let hours = interiorWholeHours(from: topTime, to: bottomTime, minGapMinutes: 15)
-        guard let nowTime else { return hours }
-        return hours.filter { pixelDistance(from: $0, to: nowTime) >= minLabelPixelGap }
-    }
-    
-    private var topConflictsWithNow: Bool {
-        guard let now = nowTime, showTop else { return false }
-        return pixelDistance(from: now, to: topTime) < minLabelPixelGap
-    }
-
-    private var bottomConflictsWithNow: Bool {
-        guard let now = nowTime, showBottom else { return false }
-        return pixelDistance(from: now, to: bottomTime) < minLabelPixelGap
-    }
-
-    private var nowInsideRange: Bool {
-        guard let now = nowTime else { return false }
-        return now.minutesSinceMidnight >= topTime.minutesSinceMidnight
-            && now.minutesSinceMidnight < bottomTime.minutesSinceMidnight
-    }
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            VStack(alignment: .trailing, spacing: 0) {
-                if showTop && !topConflictsWithNow { timeText(topTime).offset(y: -.bodyFontSize / 2) }
-                Spacer(minLength: 0)
-                if showBottom && !bottomConflictsWithNow { timeText(bottomTime).offset(y: .bodyFontSize / 2) }
-            }
-
-            ForEach(interiorHours, id: \.minutesSinceMidnight) { hour in
-                let total = bottomTime.minutesSinceMidnight - topTime.minutesSinceMidnight
-                let offset = hour.minutesSinceMidnight - topTime.minutesSinceMidnight
-                let fraction = CGFloat(offset) / CGFloat(max(total, 1))
-                timeText(hour)
-                    .foregroundStyle(.tertiary)
-                    .offset(y: fraction * height - 10)
-            }
-
-            if let nowTime, nowInsideRange {
-                let total = bottomTime.minutesSinceMidnight - topTime.minutesSinceMidnight
-                let offset = nowTime.minutesSinceMidnight - topTime.minutesSinceMidnight
-                let fraction = CGFloat(offset) / CGFloat(max(total, 1))
-                Text(nowTime.description)
-                    .font(.subheadline)
-                    .monospacedDigit()
-                    .foregroundStyle(.primary)
-                    .offset(y: fraction * height - 10)
-            }
-        }
-        .frame(width: 60, height: height)
-    }
-
-    private func timeText(_ time: TimeOfDay) -> some View {
-        Text(time.description)
-            .font(.subheadline)
-            .monospacedDigit()
-            .foregroundStyle(.secondary)
     }
 }
 
@@ -454,5 +555,5 @@ struct PreparationContentView: View {
 }
 
 #Preview {
-    TimelineTaskRow(task: .init(title: "Morning Jogging", content: "xxx\nxxx\nxxx\nxxx", theme: .green, startTime: 60 * 6 + 30, endTime: 60 * 8, preparationTime: 10), dayState: .today)
+    TimelineTaskRow(task: .init(title: "Morning Jogging", content: "xxx\nxxx\nxxx\nxxx", theme: .green, startTime: 60 * 6 + 30, endTime: 60 * 8, preparationTime: 10), dayState: .today, layoutOrder: 0)
 }
