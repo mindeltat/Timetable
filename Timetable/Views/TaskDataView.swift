@@ -29,13 +29,6 @@ func interiorWholeHours(
     return result
 }
 
-func minutesSinceStartOfDay(_ date: Date = Date(), calendar: Calendar = .current) -> Int {
-    let components = calendar.dateComponents([.hour, .minute], from: date)
-    let hour = components.hour ?? 0
-    let minute = components.minute ?? 0
-    return hour * 60 + minute
-}
-
 struct TaskDataImageView: View {
     let image: ImageType
     let theme: Theme

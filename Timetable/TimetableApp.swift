@@ -18,7 +18,7 @@ struct TimetableApp: App {
             DayTasks.self,
             UserTemplates.self
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, groupContainer: .identifier("group.mindeltat.Timetable"))
 
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])

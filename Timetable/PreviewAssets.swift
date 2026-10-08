@@ -84,7 +84,7 @@ enum SampleData {
     }
 
     @MainActor
-    static func dayTasks(from templates: UserTemplates, daysBack: Int = 1, daysForward: Int = 3) -> [DayTasks] {
+    static func dayTasks(from templates: UserTemplates, daysBack: Int = 1, daysForward: Int = 3, in context: ModelContext) -> [DayTasks] {
         var result: [DayTasks] = []
         let calendar = Calendar(identifier: .gregorian)
         let today = calendar.startOfDay(for: Date())
@@ -97,7 +97,7 @@ enum SampleData {
                           day: comps.day ?? 1)
 
             let dayTasks = DayTasks(day: day, template: day.weekday)
-            dayTasks.applyTemplate(use: day.weekday, template: templates)
+            dayTasks.applyTemplate(use: day.weekday, template: templates, in: context)
 
             if offset == 0, let first = dayTasks.tasks.first {
                 first.title = "Rest"
@@ -152,7 +152,7 @@ enum PreviewContainer {
         let templates = SampleData.userTemplates()
         context.insert(templates)
 
-        let days = SampleData.dayTasks(from: templates)
+        let days = SampleData.dayTasks(from: templates, in: context)
         days.forEach { context.insert($0) }
 
         try? context.save()

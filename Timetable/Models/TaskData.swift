@@ -7,12 +7,28 @@
 
 import SwiftUI
 import SwiftData
+import WidgetKit
+
+func minutesSinceStartOfDay(_ date: Date = Date(), calendar: Calendar = .current) -> Int {
+    let components = calendar.dateComponents([.hour, .minute], from: date)
+    let hour = components.hour ?? 0
+    let minute = components.minute ?? 0
+    return hour * 60 + minute
+}
+
+enum DayState {
+    case before
+    case after
+    case today
+}
 
 // MARK: - Theme
 
 enum Theme: String, Codable, Equatable, Hashable, CaseIterable {
     case red, orange, yellow, lime, green, cyan, blue, violet
+}
 
+extension Theme {
     var bgColor: Color {
         switch self {
         case .red:    return .redBg.opacity(0.4)
@@ -85,7 +101,7 @@ nonisolated struct Day: Hashable, Codable, Equatable {
     let year: Int
     let month: Int
     let day: Int
-
+    
     var description: String {
         String(format: "%04d-%02d-%02d", year, month, day)
     }
@@ -98,7 +114,7 @@ nonisolated struct Day: Hashable, Codable, Equatable {
         
         return date.formatted(date: .long, time: .omitted)
     }
-
+    
     var weekday: Weekday {
         var calendar = Calendar(identifier: .gregorian)
         guard let date = calendar.date(from: DateComponents(year: year, month: month, day: day)) else {
@@ -147,8 +163,22 @@ nonisolated struct Day: Hashable, Codable, Equatable {
         self.month = c.month ?? 1
         self.day = c.day ?? 1
     }
-
+    
     static var today: Day { Day(date: Date()) }
+    
+    func date(
+        at time: TimeOfDay,
+        calendar: Calendar = Calendar(identifier: .gregorian)
+    ) -> Date? {
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = time.hour
+        components.minute = time.minute
+        
+        return calendar.date(from: components)
+    }
 }
 
 extension Day: Comparable {
@@ -515,15 +545,14 @@ final class DayTasks {
                 return existing
             }
             
-            existing.removeTasks(in: context)
-            existing.applyTemplate(use: existing.useTemplate!, template: template)
+            existing.applyTemplate(use: existing.useTemplate!, template: template, in: context)
             return existing
         }
         
         let newDay: DayTasks = DayTasks(day: day, template: day.weekday)
         
         if day >= .today {
-            newDay.applyTemplate(use: day.weekday, template: template)
+            newDay.applyTemplate(use: day.weekday, template: template, in: context)
         }
         
         context.insert(newDay)
@@ -537,20 +566,27 @@ final class DayTasks {
         DayTasks.getOrCreate(for: .today.next.next, template: .shared(in: context), in: context)
     }
     
-    func removeTasks(in context: ModelContext) {
+    func removeTasks(in context: ModelContext, notification: Bool = false) {
         for task in tasks {
             task.cancelNotification()
             context.delete(task)
         }
         tasks = []
         try? context.save()
+        if notification && dayValue == .today {
+            WidgetCenter.shared.reloadTimelines(ofKind: "NextEventsWidget")
+        }
     }
 
-    func applyTemplate(use weekday: Weekday, template: UserTemplates) {
+    func applyTemplate(use weekday: Weekday, template: UserTemplates, in context: ModelContext) {
         useTemplate = weekday
+        removeTasks(in: context)
         tasks = template.tasks(for: weekday).map { TaskData(copying: $0) }
         for task in tasks {
             task.scheduleNotification()
+        }
+        if dayValue == .today {
+            WidgetCenter.shared.reloadTimelines(ofKind: "NextEventsWidget")
         }
     }
 }

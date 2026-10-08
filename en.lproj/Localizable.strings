@@ -110,3 +110,6 @@
 "PresetsSettingsView.notification.notification" = "Turn on notification by default";
 "PresetsSettingsView.notification.sound" = "Turn on notification sound by default";
 "DurationPresetEditingView.title" = "Duration Preset";
+"NextEventsWidget" = "Upcoming Events";
+"NextEventsWidget.description" = "View remaining tasks for today.";
+"NextEventsWidget.short" = "Upcoming";

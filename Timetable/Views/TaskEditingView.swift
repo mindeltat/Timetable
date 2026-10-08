@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import Observation
+import WidgetKit
 
 struct TaskEditingView: View {
     @Environment(\.dismiss) private var dismiss
@@ -40,6 +41,10 @@ struct TaskEditingView: View {
                     DayTasks.getOrCreate(for: .today.next.next, template: .shared(in: modelContext), in: modelContext)
                 }
                 
+                if vm.dayState == .today {
+                    WidgetCenter.shared.reloadTimelines(ofKind: "NextEventsWidget")
+                }
+                
                 dismiss()
             } onSave: {
                 let changed = task.startTime != copiedTask.startTime || task.preparationTime != copiedTask.preparationTime
@@ -57,6 +62,10 @@ struct TaskEditingView: View {
                 
                 if isTemplate {
                     DayTasks.scheduleNextThreeDaysNotification(template: UserTemplates.shared(in: modelContext), in: modelContext)
+                }
+                
+                if vm.dayState == .today {
+                    WidgetCenter.shared.reloadTimelines(ofKind: "NextEventsWidget")
                 }
                 
                 try? modelContext.save()

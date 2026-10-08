@@ -8,12 +8,6 @@
 import SwiftUI
 import SwiftData
 
-enum DayState {
-    case before
-    case after
-    case today
-}
-
 struct TimelineStackView: View {
     let tasks: [TaskData]
     let currentDay: Day
@@ -470,7 +464,7 @@ struct TimelineView: View {
                     .confirmationDialog("TimelineView.confirmTemplate", item: $templateToChange, titleVisibility: .visible) { newValue in
                         Button("confirm", role: .destructive) {
                             viewModel.dayTasks?.removeTasks(in: modelContext)
-                            viewModel.dayTasks?.applyTemplate(use: newValue, template: UserTemplates.shared(in: modelContext))
+                            viewModel.dayTasks?.applyTemplate(use: newValue, template: UserTemplates.shared(in: modelContext), in: modelContext)
                             templateToChange = nil
                         }
                         Button("cancel", role: .cancel) {
@@ -482,7 +476,7 @@ struct TimelineView: View {
                     .confirmationDialog("TimelineView.confirmClear", isPresented: $showClearAlert, titleVisibility: .visible) {
                         Button("confirm", role: .destructive) {
                             viewModel.dayTasks?.useTemplate = nil
-                            viewModel.dayTasks?.removeTasks(in: modelContext)
+                            viewModel.dayTasks?.removeTasks(in: modelContext, notification: true)
                         }
                         Button("cancel", role: .cancel) {
                             showClearAlert.toggle()

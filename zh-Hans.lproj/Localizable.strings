@@ -110,3 +110,6 @@
 "PresetsSettingsView.notification.notification" = "默认开启通知";
 "PresetsSettingsView.notification.sound" = "默认开启通知音效";
 "DurationPresetEditingView.title" = "持续时长预设";
+"NextEventsWidget" = "未来任务";
+"NextEventsWidget.short" = "未来任务";
+"NextEventsWidget.description" = "预览今天剩余的任务。";
