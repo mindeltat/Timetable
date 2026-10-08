@@ -17,7 +17,6 @@ struct ContentView: View {
     
     @CodableStorage("settings") private var settings = Settings()
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @State private var currentTab: AppTab = .timeline
 
@@ -38,7 +37,7 @@ struct ContentView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
-        .environment(\.colorScheme, settings.appearance.colorScheme(system: colorScheme))
+        .preferredColorScheme(settings.appearance.colorScheme)
         .task {
             DayTasks.scheduleNextThreeDaysNotification(template: .shared(in: modelContext), in: modelContext)
         }

@@ -333,6 +333,92 @@ final class TimelineViewModel {
     }
 }
 
+struct TaskIconView: View {
+    let task: TaskData
+    
+    var body: some View {
+        switch task.icon {
+        case .system(let name):
+            Image(systemName: name)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 24, height: 24)
+                .bold()
+                .foregroundStyle(task.theme.fgColor)
+        case .file(let path):
+            EmptyView()
+                .frame(width: 24, height: 24)
+        }
+    }
+}
+
+struct WeekView: View {
+    let week: [Day]
+    let height: CGFloat
+    let dayTasks: [[TaskData]]
+    let modelContext: ModelContext
+    
+    let earliestTime: Int?
+    let latestTime: Int?
+    
+    init(week: [Day], height: CGFloat, modelContext: ModelContext) {
+        self.week = week
+        self.height = height
+        self.modelContext = modelContext
+        var rv: [[TaskData]] = []
+        for day in week {
+            rv.append(DayTasks.getOrCreate(for: day, template: .shared(in: modelContext), in: modelContext).tasks.sorted { $0.startTime < $1.startTime })
+        }
+        self.dayTasks = rv
+        
+        rv = rv.filter { !$0.isEmpty }
+        
+        self.earliestTime = rv.map { $0.first!.startTimeIncludingPreparation }.min()
+        self.latestTime = rv.map { $0.last!.endTime }.max()
+    }
+    
+    var body: some View {
+        if let earliestTime, let latestTime {
+            let minutesPerPt = CGFloat(latestTime - earliestTime) / height
+            HStack(spacing: 0) {
+                ForEach(Array(dayTasks.enumerated()), id: \.offset) { _, tasks in
+                    VStack(spacing: 0) {
+                        if !tasks.isEmpty {
+                            Color.clear
+                                .frame(height: CGFloat(tasks.first!.startTimeIncludingPreparation - earliestTime) / minutesPerPt)
+                            ForEach(Array(tasks.enumerated()), id: \.offset) { i, task in
+                                let taskHeight = CGFloat(task.durationWithPreparation) / minutesPerPt
+                                Group {
+                                    if taskHeight < 28 {
+                                        Color.clear
+                                    } else {
+                                        TaskIconView(task: task)
+                                    }
+                                }
+                                .frame(width: 38, height: taskHeight)
+                                .background {
+                                    RoundedRectangle(cornerRadius: .largeControl / 4)
+                                        .fill(task.theme.bgColorNoOpacity)
+                                }
+                                if i != tasks.count - 1 {
+                                    Rectangle()
+                                        .fill(LinearGradient(colors: [task.theme.bgColorNoOpacity, tasks[i + 1].theme.bgColorNoOpacity], startPoint: .top, endPoint: .bottom))
+                                        .frame(width: 3, height: CGFloat(tasks[i + 1].startTimeIncludingPreparation - task.endTime) / minutesPerPt)
+                                }
+                            }
+                            Color.clear
+                                .frame(height: CGFloat(latestTime - tasks.last!.endTime) / minutesPerPt)
+                        }
+                    }
+                    .frame(width: 40)
+                }
+            }
+        } else {
+            Color.clear
+        }
+    }
+}
+
 struct TimelineView: View {
     @CodableStorage("settings") private var settings = Settings()
     @Environment(\.scenePhase) private var scenePhase
@@ -343,6 +429,8 @@ struct TimelineView: View {
     
     @State var templateToChange: Weekday? = nil
     @State var showClearAlert: Bool = false
+    @State var expandingWeek: Bool = false
+    @State var totalHeight: CGFloat = 0
 
     var body: some View {
         @Bindable var vm = viewModel
@@ -359,6 +447,9 @@ struct TimelineView: View {
                     .padding()
                 }
             }
+            .defaultScrollAnchor(.bottom, for: .sizeChanges)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(expandingWeek ? .accentText : .clear)
             .sheet(isPresented: $isAddingTask) {
                 let i: Int? = vm.dayState == .today ? viewModel.firstAvailableIndexAfterNow : viewModel.firstAvailableIndexAfter(viewModel.sortedTasks.last?.endTime ?? 359)
                 if let i {
@@ -370,73 +461,92 @@ struct TimelineView: View {
             }
             .scrollPosition(id: $vm.scrollId, anchor: .center)
             .safeAreaBar(edge: .top) {
-                HStack(spacing: 0) {
-                    Button {
-                        viewModel.displayedDays = Day(
-                            date: viewModel.displayedDays.first!.date
-                                .addingTimeInterval(-24 * 60 * 60)
-                        ).weeks
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .padding(.horizontal)
-                            .imageScale(.large)
-                            .bold()
-                    }
-                    .buttonStyle(.borderless)
-                    .tint(.accentColor)
-
-                    Spacer()
-
-                    ForEach(viewModel.displayedDays.indices, id: \.self) { i in
-                        let day = viewModel.displayedDays[i]
-                        let accent = day == viewModel.currentDay
-
+                VStack {
+                    HStack(spacing: 0) {
                         Button {
-                            viewModel.setCurrentDay(to: day, context: modelContext)
+                            viewModel.displayedDays = Day(
+                                date: viewModel.displayedDays.first!.date
+                                    .addingTimeInterval(-24 * 60 * 60)
+                            ).weeks
                         } label: {
-                            VStack(spacing: 4) {
-                                Text(String(localized: .init(Weekday(rawValue: i + 1)!.shortName)))
-                                    .foregroundStyle(accent ? .primary : .secondary)
-                                Text("\(day.day)")
-                                    .foregroundStyle(accent ? Color.accentText : Color.primary)
-                                    .font(.system(size: .calendarFontSize, weight: .semibold, design: .rounded))
-                                    .background {
-                                        Circle()
-                                            .fill(accent ? .accentColor : .clear)
-                                            .frame(width: .calendarCircleSize, height: .calendarCircleSize)
-                                    }
-                                    .frame(width: .calendarCircleSize, height: .calendarCircleSize)
-                            }
-                            .frame(width: 40)
+                            Image(systemName: "chevron.left")
+                                .padding(.horizontal)
+                                .imageScale(.large)
+                                .bold()
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
+                        .tint(.accentColor)
+                        
+                        Spacer()
+                        
+                        ForEach(viewModel.displayedDays.indices, id: \.self) { i in
+                            let day = viewModel.displayedDays[i]
+                            let accent = day == viewModel.currentDay
+                            
+                            Button {
+                                viewModel.setCurrentDay(to: day, context: modelContext)
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Text(String(localized: .init(Weekday(rawValue: i + 1)!.shortName)))
+                                        .foregroundStyle(accent ? .primary : .secondary)
+                                    Text("\(day.day)")
+                                        .foregroundStyle(accent ? Color.accentText : Color.primary)
+                                        .font(.system(size: .calendarFontSize, weight: .semibold, design: .rounded))
+                                        .background {
+                                            Circle()
+                                                .fill(accent ? .accentColor : .clear)
+                                                .frame(width: .calendarCircleSize, height: .calendarCircleSize)
+                                        }
+                                        .frame(width: .calendarCircleSize, height: .calendarCircleSize)
+                                }
+                                .frame(width: 40)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        
+                        Spacer()
+                        
+                        Button {
+                            viewModel.displayedDays = Day(
+                                date: viewModel.displayedDays.last!.date
+                                    .addingTimeInterval(24 * 60 * 60)
+                            ).weeks
+                        } label: {
+                            Image(systemName: "chevron.right")
+                                .padding(.horizontal)
+                                .imageScale(.large)
+                                .bold()
+                        }
+                        .buttonStyle(.borderless)
+                        .tint(.accentColor)
                     }
-
-                    Spacer()
-
-                    Button {
-                        viewModel.displayedDays = Day(
-                            date: viewModel.displayedDays.last!.date
-                                .addingTimeInterval(24 * 60 * 60)
-                        ).weeks
-                    } label: {
-                        Image(systemName: "chevron.right")
-                            .padding(.horizontal)
-                            .imageScale(.large)
-                            .bold()
+                    if expandingWeek {
+                        WeekView(week: vm.displayedDays, height: totalHeight * 0.75, modelContext: modelContext)
+                            .frame(height: totalHeight * 0.75)
+                            .padding(.vertical, 8)
                     }
-                    .buttonStyle(.borderless)
-                    .tint(.accentColor)
                 }
                 .padding(.bottom)
+                .background(expandingWeek ? .accentText : .clear)
             }
             .scrollEdgeEffectStyle(.hard, for: .top)
             .navigationTitle(viewModel.currentDay.localizedDescription)
             .safeSetNavigationTitleDisplayModeToInline()
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text(viewModel.currentDay.localizedDescription)
+                    Button {
+                        withAnimation {
+                            expandingWeek.toggle()
+                        }
+                    } label: {
+                        HStack {
+                            Text(viewModel.currentDay.localizedDescription)
+                            Image(systemName: expandingWeek ? "chevron.up" : "chevron.down")
+                                .imageScale(.small)
+                        }
                         .fontWeight(.semibold)
+                        .contentShape(Rectangle())
+                    }
                 }
                 ToolbarItem(placement: .topBarLeading) {
                     Menu("", systemImage: "list.clipboard") {
@@ -520,6 +630,11 @@ struct TimelineView: View {
             }
         }
         .environment(viewModel)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { newHeight in
+            totalHeight = newHeight
+        }
     }
 }
 

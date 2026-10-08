@@ -37,8 +37,8 @@ struct TaskEditingView: View {
                 modelContext.delete(task)
                 
                 if isTemplate {
-                    DayTasks.getOrCreate(for: .today.next, template: .shared(in: modelContext), in: modelContext)
-                    DayTasks.getOrCreate(for: .today.next.next, template: .shared(in: modelContext), in: modelContext)
+                    DayTasks.scheduleNextThreeDaysNotification(template: UserTemplates.shared(in: modelContext), in: modelContext)
+                    UserTemplates.shared(in: modelContext).templatesId = UUID()
                 }
                 
                 if vm.dayState == .today {
@@ -62,6 +62,7 @@ struct TaskEditingView: View {
                 
                 if isTemplate {
                     DayTasks.scheduleNextThreeDaysNotification(template: UserTemplates.shared(in: modelContext), in: modelContext)
+                    UserTemplates.shared(in: modelContext).templatesId = UUID()
                 }
                 
                 if vm.dayState == .today {

@@ -386,6 +386,10 @@ final class TaskData {
         endTime - startTime + preparationTime
     }
     
+    var startTimeIncludingPreparation: Int {
+        startTime - preparationTime
+    }
+    
     func topTime(dayState: DayState, nowMinutes: Int) -> TimeOfDay {
         let preparationIsDone: Bool
         switch dayState {
@@ -462,6 +466,7 @@ final class TaskData {
 @Model
 final class UserTemplates {
     @Relationship var templateDays: [DayTasks]
+    var templatesId = UUID()
 
     init() {
         self.templateDays = [
@@ -507,6 +512,7 @@ final class DayTasks {
     var day: Int
     
     var useTemplate: Weekday? = nil
+    var templatesId: UUID? = nil
 
     @Relationship(deleteRule: .cascade) var tasks: [TaskData]
 
@@ -545,7 +551,9 @@ final class DayTasks {
                 return existing
             }
             
-            existing.applyTemplate(use: existing.useTemplate!, template: template, in: context)
+            if existing.templatesId != template.templatesId {
+                existing.applyTemplate(use: existing.useTemplate!, template: template, in: context)
+            }
             return existing
         }
         
@@ -588,5 +596,6 @@ final class DayTasks {
         if dayValue == .today {
             WidgetCenter.shared.reloadTimelines(ofKind: "NextEventsWidget")
         }
+        templatesId = template.templatesId
     }
 }
