@@ -13,6 +13,7 @@ struct TemplateView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = TimelineViewModel()
     @State private var isAddingTask: Bool = false
+    @State var showClearAlert: Bool = false
 
     var body: some View {
         @Bindable var vm = viewModel
@@ -36,6 +37,7 @@ struct TemplateView: View {
                         task: .init(startTime: i * 5, endTime: i * 5 + 1, notification: settings.defaultNotification, notificationSound: settings.defaultNotificationSound),
                         existed: false
                     )
+                    .environment(\.currentViewingDay, vm.currentDay)
                 }
             }
             .safeAreaBar(edge: .top) {
@@ -79,13 +81,28 @@ struct TemplateView: View {
                     }
                     .buttonStyle(.borderedProminent)
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("TimelineView.clear", systemImage: "trash", role: .destructive) {
+                        showClearAlert.toggle()
+                    }
+                    .confirmationDialog("TimelineView.confirmClear", isPresented: $showClearAlert, titleVisibility: .visible) {
+                        Button("confirm", role: .destructive) {
+                            viewModel.dayTasks?.removeTasks(in: modelContext, notification: true)
+                        }
+                        Button("cancel", role: .cancel) {
+                            showClearAlert.toggle()
+                        }
+                    } message: {
+                        Text("TimelineView.confirmClear.text")
+                    }
+                }
             }
         }
         .onAppear {
             viewModel.currentDay = .init(year: 100000, month: 1, day: 1)
             viewModel.loadDayTasks(context: modelContext)
         }
-        .environment(viewModel)
+        .environment(\.currentViewingDay, vm.currentDay)
         .environment(\.isTemplate, true)
     }
 }

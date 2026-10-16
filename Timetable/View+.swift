@@ -71,3 +71,25 @@ extension EnvironmentValues {
         set { self[IsTemplateKey.self] = newValue }
     }
 }
+
+private struct CurrentViewingDay: EnvironmentKey {
+    static let defaultValue: Day? = nil
+}
+
+extension EnvironmentValues {
+    var currentViewingDay: Day? {
+        get { self[CurrentViewingDay.self] }
+        set { self[CurrentViewingDay.self] = newValue }
+    }
+}
+
+private struct SharedScheduled: EnvironmentKey {
+    static let defaultValue: [ClosedRange<Int>] = []
+}
+
+extension EnvironmentValues {
+    var sharedScheduled: [ClosedRange<Int>] {
+        get { self[SharedScheduled.self] }
+        set { self[SharedScheduled.self] = newValue }
+    }
+}

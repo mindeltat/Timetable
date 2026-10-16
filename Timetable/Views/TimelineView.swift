@@ -82,257 +82,6 @@ struct TimelineStackView: View {
     }
 }
 
-@Observable
-final class TimelineViewModel {
-    static let allIndexes: [Int] = {
-        var rv: [Int] = []
-        for i in 0..<288 {
-            rv.append(i)
-        }
-        return rv
-    }()
-    
-    static let allHoursAndMinutes: [Int: [Int]] = {
-        var rv: [Int: [Int]] = [:]
-        for i in 0...23 {
-            var temp: [Int] = []
-            for j in 0...59 {
-                temp.append(j)
-            }
-            rv.updateValue(temp, forKey: i)
-        }
-        return rv
-    }()
-    
-    var currentDay: Day = .today
-    var displayedDays: [Day] = Day.today.weeks
-    var scrollId: String? = nil
-
-    var dayTasks: DayTasks? {
-        didSet {
-            rebuild()
-            startObservingTasks()
-        }
-    }
-
-    private(set) var sortedTasks: [TaskData] = []
-    private(set) var scheduled: [ClosedRange<Int>] = []
-
-    @ObservationIgnored private var observationGeneration = 0
-
-    var dayState: DayState {
-        if currentDay < .today { return .before }
-        if currentDay == .today { return .today }
-        return .after
-    }
-
-    var availableIndexes: [Int] {
-        availableIndexes()
-    }
-    
-    func availableIndexes(exclude: Int? = nil) -> [Int] {
-        var scheduled: [ClosedRange<Int>]
-        if let exclude {
-            scheduled = self.scheduled
-            scheduled.remove(at: exclude)
-        } else {
-            scheduled = self.scheduled
-        }
-
-        if scheduled.isEmpty {
-            return TimelineViewModel.allIndexes
-        }
-        
-        var rv: [Int] = []
-        
-        for i in 0..<scheduled.first!.lowerBound {
-            if i % 5 == 0 { rv.append(i / 5) }
-        }
-        for i in 0..<scheduled.count - 1 {
-            for j in scheduled[i].upperBound..<scheduled[i + 1].lowerBound {
-                if j % 5 == 0 { rv.append(j / 5) }
-            }
-        }
-        for i in scheduled.last!.upperBound..<1440 {
-            if i % 5 == 0 { rv.append(i / 5) }
-        }
-        return rv
-    }
-
-    func availableDuration(after time: Int, exclude: Int? = nil) -> Int {
-        var scheduled: [ClosedRange<Int>]
-        if let exclude {
-            scheduled = self.scheduled
-            scheduled.remove(at: exclude)
-        } else {
-            scheduled = self.scheduled
-        }
-        
-        for r in scheduled {
-            if time < r.lowerBound {
-                return r.lowerBound - time
-            }
-        }
-        
-        return 1440 - time
-    }
-    
-    func availableDuration(before time: Int, exclude: Int? = nil) -> Int {
-        var scheduled: [ClosedRange<Int>]
-        if let exclude {
-            scheduled = self.scheduled
-            scheduled.remove(at: exclude)
-        } else {
-            scheduled = self.scheduled
-        }
-        
-        if scheduled.isEmpty {
-            return time
-        }
-        
-        if time < scheduled.first!.upperBound {
-            return time
-        }
-        for i in 0..<(scheduled.count - 1) {
-            if time < scheduled[i + 1].upperBound {
-                return time - scheduled[i].upperBound
-            }
-        }
-        return time - scheduled.last!.upperBound
-    }
-
-    var firstAvailableIndexAfterNow: Int? {
-        let now = minutesSinceStartOfDay()
-        return firstAvailableIndexAfter(now)
-    }
-    
-    func firstAvailableIndexAfter(_ time: Int) -> Int? {
-        return availableIndexes.first { $0 > time / 5 } ?? availableIndexes.first
-    }
-    
-    func availableHoursAndMinutes(exclude: Int? = nil) -> [Int: [Int]] {
-        var scheduled: [ClosedRange<Int>]
-        if let exclude {
-            scheduled = self.scheduled
-            scheduled.remove(at: exclude)
-        } else {
-            scheduled = self.scheduled
-        }
-        
-        if scheduled.isEmpty {
-            return TimelineViewModel.allHoursAndMinutes
-        }
-        
-        var rv: [Int: [Int]] = [:]
-        
-        for i in 0..<scheduled.first!.lowerBound {
-            let hour = i / 60
-            let minute = i % 60
-            if rv[hour] != nil {
-                rv[hour]!.append(minute)
-            } else {
-                rv.updateValue([minute], forKey: hour)
-            }
-        }
-        for i in 0..<scheduled.count - 1 {
-            for j in scheduled[i].upperBound..<scheduled[i + 1].lowerBound {
-                let hour = j / 60
-                let minute = j % 60
-                if rv[hour] != nil {
-                    rv[hour]!.append(minute)
-                } else {
-                    rv.updateValue([minute], forKey: hour)
-                }
-            }
-        }
-        for i in scheduled.last!.upperBound..<1440 {
-            let hour = i / 60
-            let minute = i % 60
-            if rv[hour] != nil {
-                rv[hour]!.append(minute)
-            } else {
-                rv.updateValue([minute], forKey: hour)
-            }
-        }
-        
-        return rv
-    }
-    
-    func availableHoursAndMinutes(after: Int, exclude: Int? = nil) -> [Int: [Int]] {
-        let max = availableDuration(after: after, exclude: exclude)
-        
-        var rv: [Int: [Int]] = [:]
-        
-        for i in (after + 1)...(after + max) {
-            let hour = i / 60
-            let minute = i % 60
-            if rv[hour] != nil {
-                rv[hour]!.append(minute)
-            } else {
-                rv.updateValue([minute], forKey: hour)
-            }
-        }
-        
-        return rv
-    }
-
-    func loadDayTasks(context: ModelContext) {
-        dayTasks = DayTasks.getOrCreate(
-            for: currentDay,
-            template: UserTemplates.shared(in: context),
-            in: context
-        )
-    }
-
-    func setCurrentDay(to day: Day, context: ModelContext) {
-        currentDay = day
-        loadDayTasks(context: context)
-        updateScrollId()
-    }
-
-    func updateScrollId() {
-        if dayState == .today {
-            let now = minutesSinceStartOfDay()
-            for task in sortedTasks {
-                if task.startTime >= now || task.endTime >= now {
-                    scrollId = task.id
-                    return
-                }
-            }
-            scrollId = sortedTasks.last?.id ?? ""
-        } else {
-            scrollId = sortedTasks.first?.id
-        }
-    }
-
-    private func rebuild() {
-        sortedTasks = (dayTasks?.tasks ?? []).sorted { $0.startTime < $1.startTime }
-        scheduled = sortedTasks.map { ($0.startTime - $0.preparationTime)...$0.endTime }
-    }
-
-    private func startObservingTasks() {
-        guard let dayTasks else { return }
-        observationGeneration += 1
-        let generation = observationGeneration
-
-        withObservationTracking {
-            _ = dayTasks.tasks
-            for task in dayTasks.tasks {
-                _ = task.startTime
-                _ = task.endTime
-                _ = task.preparationTime
-            }
-        } onChange: { [weak self] in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                guard self.observationGeneration == generation else { return }
-                self.rebuild()
-                self.startObservingTasks()
-            }
-        }
-    }
-}
-
 struct TaskIconView: View {
     let task: TaskData
     
@@ -419,6 +168,160 @@ struct WeekView: View {
     }
 }
 
+@Observable
+final class TimelineViewModel {
+    var currentDay: Day = .today
+    var displayedDays: [Day] = Day.today.weeks
+    var scrollId: String? = nil
+
+    var dayTasks: DayTasks? {
+        didSet {
+            rebuild()
+            startObservingTasks()
+        }
+    }
+
+    private(set) var sortedTasks: [TaskData] = []
+    private(set) var scheduled: [ClosedRange<Int>] = []
+
+    @ObservationIgnored private var observationGeneration = 0
+
+    var dayState: DayState {
+        if currentDay < .today { return .before }
+        if currentDay == .today { return .today }
+        return .after
+    }
+
+    var availableIndexes: [Int] {
+        availableIndexes()
+    }
+    
+    func availableIndexes(exclude: Int? = nil) -> [Int] {
+        var scheduled: [ClosedRange<Int>]
+        if let exclude {
+            scheduled = self.scheduled
+            scheduled.remove(at: exclude)
+        } else {
+            scheduled = self.scheduled
+        }
+
+        return Timetable.availableIndexes(scheduled: scheduled)
+    }
+
+    func availableDuration(after time: Int, exclude: Int? = nil) -> Int {
+        var scheduled: [ClosedRange<Int>]
+        if let exclude {
+            scheduled = self.scheduled
+            scheduled.remove(at: exclude)
+        } else {
+            scheduled = self.scheduled
+        }
+        
+        return Timetable.availableDuration(scheduled: scheduled, after: time)
+    }
+    
+    func availableDuration(before time: Int, exclude: Int? = nil) -> Int {
+        var scheduled: [ClosedRange<Int>]
+        if let exclude {
+            scheduled = self.scheduled
+            scheduled.remove(at: exclude)
+        } else {
+            scheduled = self.scheduled
+        }
+        
+        return Timetable.availableDuration(scheduled: scheduled, before: time)
+    }
+
+    var firstAvailableIndexAfterNow: Int? {
+        let now = minutesSinceStartOfDay()
+        return firstAvailableIndexAfter(now)
+    }
+    
+    func firstAvailableIndexAfter(_ time: Int) -> Int? {
+        return availableIndexes.first { $0 > time / 5 } ?? availableIndexes.first
+    }
+    
+    func availableHoursAndMinutes(exclude: Int? = nil) -> [Int: [Int]] {
+        var scheduled: [ClosedRange<Int>]
+        if let exclude {
+            scheduled = self.scheduled
+            scheduled.remove(at: exclude)
+        } else {
+            scheduled = self.scheduled
+        }
+        
+        return Timetable.availableHoursAndMinutes(scheduled: scheduled)
+    }
+    
+    func availableHoursAndMinutes(after: Int, exclude: Int? = nil) -> [Int: [Int]] {
+        var scheduled: [ClosedRange<Int>]
+        if let exclude {
+            scheduled = self.scheduled
+            scheduled.remove(at: exclude)
+        } else {
+            scheduled = self.scheduled
+        }
+        
+        return Timetable.availableHoursAndMinutes(scheduled: scheduled, after: after)
+    }
+
+    func loadDayTasks(context: ModelContext) {
+        dayTasks = DayTasks.getOrCreate(
+            for: currentDay,
+            template: UserTemplates.shared(in: context),
+            in: context
+        )
+    }
+
+    func setCurrentDay(to day: Day, context: ModelContext) {
+        currentDay = day
+        loadDayTasks(context: context)
+        updateScrollId()
+    }
+
+    func updateScrollId() {
+        if dayState == .today {
+            let now = minutesSinceStartOfDay()
+            for task in sortedTasks {
+                if task.startTime >= now || task.endTime >= now {
+                    scrollId = task.id
+                    return
+                }
+            }
+            scrollId = sortedTasks.last?.id ?? ""
+        } else {
+            scrollId = sortedTasks.first?.id
+        }
+    }
+
+    private func rebuild() {
+        sortedTasks = (dayTasks?.tasks ?? []).sorted { $0.startTime < $1.startTime }
+        scheduled = sortedTasks.map { ($0.startTime - $0.preparationTime)...$0.endTime }
+    }
+
+    private func startObservingTasks() {
+        guard let dayTasks else { return }
+        observationGeneration += 1
+        let generation = observationGeneration
+
+        withObservationTracking {
+            _ = dayTasks.tasks
+            for task in dayTasks.tasks {
+                _ = task.startTime
+                _ = task.endTime
+                _ = task.preparationTime
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard self.observationGeneration == generation else { return }
+                self.rebuild()
+                self.startObservingTasks()
+            }
+        }
+    }
+}
+
 struct TimelineView: View {
     @CodableStorage("settings") private var settings = Settings()
     @Environment(\.scenePhase) private var scenePhase
@@ -457,6 +360,7 @@ struct TimelineView: View {
                         task: .init(startTime: i * 5, endTime: i * 5 + 1, notification: settings.defaultNotification, notificationSound: settings.defaultNotificationSound),
                         existed: false
                     )
+                    .environment(\.currentViewingDay, vm.currentDay)
                 }
             }
             .scrollPosition(id: $vm.scrollId, anchor: .center)
@@ -629,7 +533,7 @@ struct TimelineView: View {
                 nowFreshId += 1
             }
         }
-        .environment(viewModel)
+        .environment(\.currentViewingDay, vm.currentDay)
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.height
         } action: { newHeight in

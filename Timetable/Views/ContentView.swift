@@ -13,6 +13,7 @@ struct ContentView: View {
         case timeline
         case template
         case settings
+        case unscheduled
     }
     
     @CodableStorage("settings") private var settings = Settings()
@@ -22,6 +23,11 @@ struct ContentView: View {
 
     var body: some View {
         TabView(selection: $currentTab) {
+            Tab("AppTab.unscheduled", systemImage: "checklist", value: .unscheduled) {
+                UnscheduledTasksView()
+                    .fontDesign(settings.fontDeisgn.font)
+            }
+            
             Tab("AppTab.timeline", systemImage: "calendar.day.timeline.left", value: .timeline) {
                 TimelineView()
                     .fontDesign(settings.fontDeisgn.font)
@@ -32,8 +38,14 @@ struct ContentView: View {
                     .fontDesign(settings.fontDeisgn.font)
             }
             
-            Tab("AppTab.settings", systemImage: "gear", value: .settings) {
-                SettingsView()
+            if #available(anyAppleOS 27.0, *) {
+                Tab("AppTab.settings", systemImage: "gear", value: .settings, role: .prominent) {
+                    SettingsView()
+                }
+            } else {
+                Tab("AppTab.settings", systemImage: "gear", value: .settings) {
+                    SettingsView()
+                }
             }
         }
         .tabViewStyle(.sidebarAdaptable)

@@ -32,7 +32,7 @@ struct NextEventsProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (NextEventsEntry) -> ()) {
-        let entry = NextEventsEntry(date: Date(), tasks: SampleData.weekdayTemplate())
+        let entry = NextEventsEntry(date: Date(), tasks: SampleData.weekdayTemplate().map { $0.day = .init(day: .today); return $0 })
         completion(entry)
     }
 
@@ -91,13 +91,19 @@ struct TaskIconView: View {
     let task: TaskData
     
     var body: some View {
-        switch task.icon {
-        case .system(let name):
-            Image(systemName: name)
+        if task.day == nil {
+            Image(systemName: task.priority.icon)
                 .bold()
                 .foregroundStyle(task.theme.fgColor)
-        case .file(let path):
-            EmptyView()
+        } else {
+            switch task.icon {
+            case .system(let name):
+                Image(systemName: name)
+                    .bold()
+                    .foregroundStyle(task.theme.fgColor)
+            case .file(let path):
+                EmptyView()
+            }
         }
     }
 }
@@ -141,7 +147,7 @@ struct TagView: View {
 
 struct NextEventsEntryView : View {
     @Environment(\.widgetFamily) private var widgetFamily
-    var entry: NextEventsProvider.Entry
+    var entry: NextEventsEntry
 
     var body: some View {
         if entry.tasks.isEmpty {
@@ -187,13 +193,24 @@ struct NextEventsEntryView : View {
                             HStack {
                                 TaskDataImageView(image: task.icon, theme: task.theme)
                                 VStack(alignment: .leading) {
-                                    Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description) (\(task.durationWithoutPreparation.minutesDescription))")
-                                        .foregroundStyle(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    Text(task.title)
-                                        .font(.title3)
-                                        .bold()
-                                        .fixedSize(horizontal: false, vertical: true)
+                                    if task.day == nil {
+                                        if let deadline = task.deadline {
+                                            Text("\(task.durationWithoutPreparation.minutesDescription), \(Text(task.deadlineDescription).foregroundStyle(deadline > .now || task.isDone ? .secondary : Color.red))")
+                                                .foregroundStyle(.secondary)
+                                        } else {
+                                            Text(task.durationWithoutPreparation.minutesDescription)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Text("\(Text(Image(systemName: task.priority.icon)).foregroundStyle(task.theme.fgColor)) \(task.title)")
+                                            .font(.title3)
+                                            .bold()
+                                    } else {
+                                        Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description) (\(task.durationWithoutPreparation.minutesDescription))")
+                                            .foregroundStyle(.secondary)
+                                        Text(task.title)
+                                            .font(.title3)
+                                            .bold()
+                                    }
                                 }
                                 Spacer()
                             }
@@ -269,11 +286,21 @@ struct NextEventsEntryView : View {
     }
     
     private func time(task: TaskData) -> some View {
-        Text(task.startTimeOfDay.description)
-            .foregroundStyle(task.theme.fgColor)
-            .bold()
-            .fontDesign(.monospaced)
-            .lineLimit(1)
+        Group {
+            if task.day == nil {
+                if task.deadline == nil {
+                    Text("\(task.durationWithoutPreparation.minutesDescription)")
+                } else {
+                    Text("\(task.durationWithoutPreparation.minutesShortDescription), \(task.deadlineShortDescription)")
+                }
+            } else {
+                Text(task.startTimeOfDay.description)
+            }
+        }
+        .foregroundStyle(task.theme.fgColor)
+        .bold()
+        .fontDesign(.monospaced)
+        .lineLimit(1)
     }
 }
 
@@ -293,7 +320,7 @@ struct NextEventsWidget: Widget {
 #Preview(as: .systemLarge) {
     NextEventsWidget()
 } timeline: {
-    NextEventsEntry(date: .now, tasks: SampleData.weekdayTemplate())
-    NextEventsEntry(date: .now, tasks: Array(SampleData.weekdayTemplate()[1...]))
+    NextEventsEntry(date: .now, tasks: SampleData.weekdayTemplate().map { $0.day = .init(day: .today); return $0 })
+    NextEventsEntry(date: .now, tasks: Array(SampleData.weekdayTemplate()[1...]).map { $0.day = .init(day: .today); return $0 })
     NextEventsEntry(date: .now, tasks: [])
 }

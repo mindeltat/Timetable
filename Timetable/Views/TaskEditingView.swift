@@ -11,9 +11,10 @@ import Observation
 import WidgetKit
 
 struct TaskEditingView: View {
+    @Environment(\.currentViewingDay) private var currentDay
+    @Environment(\.currentTaskIndex) private var currentIndex
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Environment(TimelineViewModel.self) private var vm
     @Environment(\.isTemplate) private var isTemplate
     
     let task: TaskData
@@ -21,6 +22,8 @@ struct TaskEditingView: View {
     let existed: Bool
     
     @State var isOnCancel: Bool = false
+    @State var taskDay: Day? = nil
+    @State var scheduled: [ClosedRange<Int>] = []
     
     init(task: TaskData, existed: Bool = true) {
         self.task = task
@@ -30,9 +33,9 @@ struct TaskEditingView: View {
     
     var body: some View {
         NavigationStack {
-            TaskDataEditingView(task: copiedTask) {
-                vm.dayTasks!.tasks.removeAll { $0.id == task.id }
-                vm.dayTasks!.useTemplate = nil
+            TaskDataEditingView(task: copiedTask, taskDay: $taskDay) {
+                task.day?.tasks.removeAll { $0.id == task.id }
+                task.day?.useTemplate = nil
                 task.cancelNotification()
                 modelContext.delete(task)
                 
@@ -41,31 +44,29 @@ struct TaskEditingView: View {
                     UserTemplates.shared(in: modelContext).templatesId = UUID()
                 }
                 
-                if vm.dayState == .today {
+                if task.day?.dayValue == .today {
                     WidgetCenter.shared.reloadTimelines(ofKind: "NextEventsWidget")
                 }
                 
                 dismiss()
             } onSave: {
-                let changed = task.startTime != copiedTask.startTime || task.preparationTime != copiedTask.preparationTime
-                
                 task.copy(copiedTask)
                 if !existed {
                     modelContext.insert(task)
-                    vm.dayTasks!.tasks.append(task)
                 }
-                vm.dayTasks!.useTemplate = nil
+                if let taskDay {
+                    task.day = .getOrCreate(for: taskDay, template: .shared(in: modelContext), in: modelContext)
+                }
+                task.day?.useTemplate = nil
                 
-                if changed || !existed {
-                    task.scheduleNotification()
-                }
+                task.scheduleNotification()
                 
                 if isTemplate {
                     DayTasks.scheduleNextThreeDaysNotification(template: UserTemplates.shared(in: modelContext), in: modelContext)
                     UserTemplates.shared(in: modelContext).templatesId = UUID()
                 }
                 
-                if vm.dayState == .today {
+                if task.day?.dayValue == .today {
                     WidgetCenter.shared.reloadTimelines(ofKind: "NextEventsWidget")
                 }
                 
@@ -96,11 +97,27 @@ struct TaskEditingView: View {
         }
         .presentationDetents([.large])
         .interactiveDismissDisabled()
+        .onAppear {
+            if existed {
+                taskDay = task.day?.dayValue
+            } else {
+                taskDay = currentDay
+            }
+        }
+        .onChange(of: taskDay, initial: true) { _, nv in
+            if let nv {
+                scheduled = DayTasks.getOrCreate(for: nv, template: .shared(in: modelContext), in: modelContext).scheduled(exclude: nv == currentDay ? currentIndex : nil)
+            } else {
+                scheduled = []
+            }
+        }
+        .environment(\.sharedScheduled, scheduled)
     }
 }
 
 struct TaskDataEditingTopBarView: View {
     @Bindable var task: TaskData
+    let taskDay: Day?
     
     var body: some View {
         HStack(spacing: 0) {
@@ -110,7 +127,7 @@ struct TaskDataEditingTopBarView: View {
             HStack {
                 TaskDataImageView(image: task.icon, theme: task.theme)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description) (\((task.endTime - task.startTime).minutesDescription))")
+                    Text(taskDay == nil ? task.durationWithoutPreparation.minutesDescription : "\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description) (\((task.endTime - task.startTime).minutesDescription))")
                         .foregroundStyle(.secondary)
                     TextField("untitled", text: $task.title, prompt: Text("untitled").foregroundStyle(task.theme.fgColor.opacity(0.4)))
                         .font(.title3)
@@ -297,8 +314,7 @@ struct TaskDataEditingThemeView: View {
 struct TaskDataEditingTimeView: View {
     @CodableStorage("settings") private var settings = Settings()
     
-    @Environment(TimelineViewModel.self) private var vm
-    @Environment(\.currentTaskIndex) private var index: Int?
+    @Environment(\.sharedScheduled) private var scheduled
     @Environment(\.dismiss) private var dismiss
     @Bindable var task: TaskData
     
@@ -310,8 +326,8 @@ struct TaskDataEditingTimeView: View {
                 Picker("", selection: Binding<Int> {
                     return task.startTime
                 } set: { newValue in
-                    let maxD = vm.availableDuration(after: newValue, exclude: index)
-                    let maxPT = vm.availableDuration(before: newValue, exclude: index)
+                    let maxD = availableDuration(scheduled: scheduled, after: newValue)
+                    let maxPT = availableDuration(scheduled: scheduled, before: newValue)
                     if maxD < task.durationWithoutPreparation {
                         task.endTime = newValue + maxD
                     } else {
@@ -322,7 +338,7 @@ struct TaskDataEditingTimeView: View {
                     }
                     task.startTime = newValue
                 }) {
-                    let indexes = vm.availableIndexes(exclude: index)
+                    let indexes = availableIndexes(scheduled: scheduled)
                     
                     if let first = indexes.first {
                         if task.startTime < first * 5 {
@@ -361,7 +377,7 @@ struct TaskDataEditingTimeView: View {
                 .labelsHidden()
                 Spacer()
                 
-                let maxD = vm.availableDuration(after: task.startTime, exclude: index)
+                let maxD = availableDuration(scheduled: scheduled, after: task.startTime)
                 HStack(spacing: 0) {
                     ForEach(0...4, id: \.self) { i in
                         let value = settings.defaultDurations[i]
@@ -488,8 +504,7 @@ struct TaskDataEditingTimeView: View {
 }
 
 struct TaskDataEditingTimeCustomizeView: View {
-    @Environment(TimelineViewModel.self) private var vm
-    @Environment(\.currentTaskIndex) private var index: Int?
+    @Environment(\.sharedScheduled) private var scheduled
     @Environment(\.dismiss) private var dismiss
     @Bindable var task: TaskData
     
@@ -512,17 +527,17 @@ struct TaskDataEditingTimeCustomizeView: View {
                         task.endTime = task.startTime + 1
                     }
                     
-                    let maxD = vm.availableDuration(after: task.startTime)
+                    let maxD = availableDuration(scheduled: scheduled, after: task.startTime)
                     if task.durationWithoutPreparation > maxD {
                         task.endTime = task.startTime + maxD
                     }
                     
-                    let maxP = vm.availableDuration(before: task.startTime)
+                    let maxP = availableDuration(scheduled: scheduled, before: task.startTime)
                     if task.preparationTime > maxP {
                         task.preparationTime = maxP
                     }
                     
-                    endHoursAndMinutes = vm.availableHoursAndMinutes(after: task.startTime, exclude: index)
+                    endHoursAndMinutes = availableHoursAndMinutes(scheduled: scheduled, after: task.startTime)
                 }) {
                     ForEach(hoursAndMinutes.keys.sorted(), id: \.self) { i in
                         Text(String(format: "%02d", i))
@@ -543,17 +558,17 @@ struct TaskDataEditingTimeCustomizeView: View {
                         task.endTime = task.startTime + 1
                     }
                     
-                    let maxD = vm.availableDuration(after: task.startTime)
+                    let maxD = availableDuration(scheduled: scheduled, after: task.startTime)
                     if task.durationWithoutPreparation > maxD {
                         task.endTime = task.startTime + maxD
                     }
                     
-                    let maxP = vm.availableDuration(before: task.startTime)
+                    let maxP = availableDuration(scheduled: scheduled, before: task.startTime)
                     if task.preparationTime > maxP {
                         task.preparationTime = maxP
                     }
                     
-                    endHoursAndMinutes = vm.availableHoursAndMinutes(after: task.startTime, exclude: index)
+                    endHoursAndMinutes = availableHoursAndMinutes(scheduled: scheduled, after: task.startTime)
                 }) {
                     if let v = hoursAndMinutes[task.startTime / 60] {
                         ForEach(v, id: \.self) { i in
@@ -618,16 +633,15 @@ struct TaskDataEditingTimeCustomizeView: View {
                 }
             }
             .onAppear {
-                hoursAndMinutes = vm.availableHoursAndMinutes(exclude: index)
-                endHoursAndMinutes = vm.availableHoursAndMinutes(after: task.startTime, exclude: index)
+                hoursAndMinutes = availableHoursAndMinutes(scheduled: scheduled)
+                endHoursAndMinutes = availableHoursAndMinutes(scheduled: scheduled, after: task.startTime)
             }
         }
     }
 }
 
 struct TaskDataEditingPreparationView: View {
-    @Environment(TimelineViewModel.self) private var vm
-    @Environment(\.currentTaskIndex) private var index: Int?
+    @Environment(\.sharedScheduled) private var scheduled
     @Environment(\.dismiss) private var dismiss
     @Bindable var task: TaskData
     
@@ -638,7 +652,7 @@ struct TaskDataEditingPreparationView: View {
                     Text("TaskDataEditingView.noPreparation")
                         .tag(0)
                     
-                    let availableTime = vm.availableDuration(before: task.startTime, exclude: index)
+                    let availableTime = availableDuration(scheduled: scheduled, before: task.startTime)
                     if availableTime != 0 {
                         ForEach(1...availableTime, id: \.self) { i in
                             Text(i.minutesDescription)
@@ -673,53 +687,189 @@ struct TaskDataEditingNotificationView: View {
     @Bindable var task: TaskData
     
     var body: some View {
-        NavigationStack {
-            Form {
-                Toggle(isOn: Binding {
-                    return task.notification
-                } set: { newValue in
-                    let b = newValue == task.notification
-                    task.notification = newValue
-                    if !b {
-                        task.scheduleNotification()
-                    }
-                }) {
-                    Label("TaskDataEditingNotificationView.notification", systemImage: "bell.fill")
-                }
-                Toggle(isOn: Binding {
-                    return task.notificationSound != nil
-                } set: { newValue in
-                    let b: Bool
-                    if newValue {
-                        b = task.notificationSound == .default
-                        task.notificationSound = .default
-                    } else {
-                        b = task.notificationSound == nil
-                        task.notificationSound = nil
-                    }
-                    if !b {
-                        task.scheduleNotification()
-                    }
-                }) {
-                    Label("TaskDataEditingNotificationView.sound", systemImage: "waveform.mid")
-                        .foregroundStyle(task.notification ? .primary : .secondary)
-                }
-                .disabled(!task.notification)
+        Toggle(isOn: Binding {
+            return task.notification
+        } set: { newValue in
+            let b = newValue == task.notification
+            task.notification = newValue
+            if !b {
+                task.scheduleNotification()
             }
-            .formStyle(.grouped)
-            .navigationTitle("TaskDataEditingNotificationView.title")
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("TaskDataEditingNotificationView.title")
-                        .fontWeight(.semibold)
+        }) {
+            Label {
+                Text("TaskDataEditingNotificationView.notification")
+            } icon: {
+                Image(systemName: "bell.fill")
+                    .foregroundStyle(task.theme.fgColor)
+            }
+        }
+        Toggle(isOn: Binding {
+            return task.notificationSound != nil
+        } set: { newValue in
+            let b: Bool
+            if newValue {
+                b = task.notificationSound == .default
+                task.notificationSound = .default
+            } else {
+                b = task.notificationSound == nil
+                task.notificationSound = nil
+            }
+            if !b {
+                task.scheduleNotification()
+            }
+        }) {
+            Label {
+                Text("TaskDataEditingNotificationView.sound")
+            } icon: {
+                Image(systemName: "waveform.mid")
+                    .foregroundStyle(task.notification ? task.theme.fgColor : .secondary)
+            }
+        }
+        .disabled(!task.notification)
+    }
+}
+
+struct TaskDataEditingDurationView: View {
+    @CodableStorage("settings") private var settings = Settings()
+    @Environment(\.dismiss) private var dismiss
+    let task: TaskData
+    
+    var duration: Int {
+        task.durationWithoutPreparation
+    }
+    
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading) {
+                HStack {
+                    Picker("", selection: Binding<Int> {
+                        return duration / 60
+                    } set: { newValue in
+                        if newValue == 24 {
+                            task.endTime = task.startTime + 1440
+                        } else if newValue == 0 && duration / 60 == 0 {
+                            task.endTime = task.startTime + 1
+                        } else {
+                            task.endTime = task.startTime + newValue * 60 + duration % 60
+                        }
+                    }) {
+                        ForEach(0...24, id: \.self) { i in
+                            Text("\(i) \(String(localized: .init("hour")))")
+                                .tag(i)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.wheel)
+                    Picker("", selection: Binding<Int> {
+                        return duration % 60
+                    } set: { newValue in
+                        task.endTime = task.startTime + duration / 60 * 60 + newValue
+                    }) {
+                        if duration == 1440 {
+                            Text("0 \(String(localized: .init("minute")))")
+                                .tag(0)
+                        } else if duration == 0 {
+                            ForEach(1...59, id: \.self) { i in
+                                Text("\(i) \(String(localized: .init("minute")))")
+                                    .tag(i)
+                            }
+                        } else {
+                            ForEach(0...59, id: \.self) { i in
+                                Text("\(i) \(String(localized: .init("minute")))")
+                                    .tag(i)
+                            }
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.wheel)
                 }
+                
+                Spacer()
+                
+                HStack(spacing: 0) {
+                    ForEach(0...4, id: \.self) { i in
+                        let value = settings.defaultDurations[i]
+                        let selected = value == task.durationWithoutPreparation
+                        
+                        Button {
+                            task.endTime = task.startTime + value
+                        } label: {
+                            Text(value.minutesShortDescription)
+                                .foregroundStyle(selected ? task.theme.bgColorNoOpacity : .secondary)
+                                .fontWeight(selected ? .bold : .regular)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical)
+                                .background {
+                                    if selected {
+                                        Capsule()
+                                            .fill(task.theme.fgColor)
+                                    }
+                                }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.all, 8)
+                .background {
+                    Capsule()
+                        .fill(.quinary)
+                }
+                HStack {
+                    HStack(spacing: 0) {
+                        let value = settings.defaultDurations[5]
+                        let selected = value == task.durationWithoutPreparation
+                        Button {
+                            task.endTime = task.startTime + value
+                        } label: {
+                            Text(value.minutesShortDescription)
+                                .foregroundStyle(selected ? task.theme.bgColorNoOpacity : .secondary)
+                                .fontWeight(selected ? .bold : .regular)
+                                .padding()
+                                .background {
+                                    if selected {
+                                        Capsule()
+                                            .fill(task.theme.fgColor)
+                                    }
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        
+                        let customizedSelected = !settings.defaultDurations.contains(task.durationWithoutPreparation)
+                        Text("TaskDataEditingDurationView.customized")
+                            .foregroundStyle(customizedSelected ? task.theme.bgColorNoOpacity : .secondary)
+                            .fontWeight(customizedSelected ? .bold : .regular)
+                            .padding()
+                            .background {
+                                if customizedSelected {
+                                    Capsule()
+                                        .fill(task.theme.fgColor)
+                                }
+                            }
+                    }
+                    .padding(.all, 8)
+                    .background {
+                        Capsule()
+                            .fill(.quinary)
+                    }
+                    
+                    Spacer()
+                }
+            }
+            .padding()
+            .navigationTitle("TaskDataEditingTimeView.title")
+            .safeSetNavigationTitleDisplayModeToInline()
+            .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("", systemImage: "xmark") {
                         dismiss()
                     }
                 }
+                ToolbarItem(placement: .principal) {
+                    Text("TaskDataEditingDurationView.title")
+                        .fontWeight(.semibold)
+                }
             }
-            .safeSetNavigationTitleDisplayModeToInline()
         }
     }
 }
@@ -840,14 +990,144 @@ struct TaskDataEditingTagsView: View {
     }
 }
 
-struct TaskDataEditingView: View {
+struct TaskDataEditingDateView: View {
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Binding var taskDay: Day?
+    let task: TaskData
+    
+    var body: some View {
+        NavigationStack {
+            DatePicker("", selection: Binding {
+                taskDay?.date ?? .now
+            } set: { newValue in
+                taskDay = .init(date: newValue)
+                let dayTasks = DayTasks.getOrCreate(for: taskDay!, template: .shared(in: modelContext), in: modelContext)
+                task.applyToDay(day: dayTasks, in: modelContext, hasAddToTimeline: true)
+            }, displayedComponents: .date)
+            .tint(task.theme.fgColor)
+            .datePickerStyle(.graphical)
+            .padding()
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("TaskDataEditingDateView.title")
+                        .fontWeight(.semibold)
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("", systemImage: "xmark") {
+                        dismiss()
+                    }
+                }
+            }
+            .navigationTitle("TaskDataEditingDateView.title")
+            .safeSetNavigationTitleDisplayModeToInline()
+        }
+    }
+}
+
+struct TaskDataEditingDeadlineView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    let task: TaskData
+    
+    var duration: Int {
+        TimeOfDay(date: task.deadline!).minutesSinceMidnight
+    }
+    
+    var body: some View {
+        NavigationStack {
+            VStack {
+                DatePicker("", selection: Binding {
+                    if task.deadineDayOnly {
+                        return Day(date: task.deadline!).last.date
+                    }
+                    return task.deadline!
+                } set: { newValue in
+                    if task.deadineDayOnly {
+                        task.deadline = Day(date: newValue).next.date
+                    } else {
+                        task.deadline = newValue
+                    }
+                }, displayedComponents: .date)
+                .tint(task.theme.fgColor)
+                .datePickerStyle(.graphical)
+                
+                if !task.deadineDayOnly {
+                    Spacer()
+                    HStack {
+                        Picker("", selection: Binding<Int> {
+                            return duration / 60
+                        } set: { newValue in
+                            if newValue == 24 {
+                                task.deadline = Day(date: task.deadline!).date(at: .init(1440))
+                            } else {
+                                task.deadline = Day(date: task.deadline!).date(at: .init(newValue * 60 + duration % 60))
+                            }
+                        }) {
+                            ForEach(0...24, id: \.self) { i in
+                                Text(String(format: "%02d", i))
+                                    .tag(i)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.wheel)
+                        
+                        Text(":")
+                            .font(.title2)
+                            .bold()
+                        
+                        Picker("", selection: Binding<Int> {
+                            return duration % 60
+                        } set: { newValue in
+                            task.deadline = Day(date: task.deadline!).date(at: .init(duration / 60 * 60 + newValue))
+                        }) {
+                            if duration == 1440 {
+                                Text("00")
+                                    .tag(0)
+                            } else {
+                                ForEach(0...59, id: \.self) { i in
+                                    Text(String(format: "%02d", i))
+                                        .tag(i)
+                                }
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.wheel)
+                    }
+                }
+            }
+            .padding()
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("TaskDataEditingDateView.title")
+                        .fontWeight(.semibold)
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("", systemImage: "xmark") {
+                        dismiss()
+                    }
+                }
+            }
+            .navigationTitle("TaskDataEditingDateView.title")
+            .safeSetNavigationTitleDisplayModeToInline()
+        }
+    }
+}
+
+
+struct TaskDataEditingView: View {
+    @Environment(\.currentViewingDay) private var currentViewingDay
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.isTemplate) private var isTemplate
     
     enum SecondaryMenu: String, Identifiable {
         case theme
         case time
         case preparation
-        case notification
+        case date
+        case duration
+        case deadline
         
         var id: String { rawValue }
     }
@@ -882,6 +1162,7 @@ struct TaskDataEditingView: View {
     }
     
     @Bindable var task: TaskData
+    @Binding var taskDay: Day?
     let onDelete: () -> Void
     let onSave: () -> Void
     
@@ -891,62 +1172,189 @@ struct TaskDataEditingView: View {
     var body: some View {
         Form {
             Section {
-                Button {
-                    secondaryMenu = .time
-                } label: {
-                    HStack {
-                        Image(systemName: "clock.fill")
-                            .imageScale(.large)
-                            .foregroundStyle(task.theme.fgColor)
-                        Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description)")
-                        Spacer()
-                        Text("\((task.endTime - task.startTime).minutesDescription)")
-                            .foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right")
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.tertiary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                Button {
-                    secondaryMenu = .preparation
-                } label: {
-                    HStack {
-                        Image(systemName: "car.rear.fill")
-                            .imageScale(.large)
-                            .foregroundStyle(task.theme.fgColor)
-                        if task.preparationTime == 0 {
-                            Text("TaskDataEditingView.noPreparation")
+                if !isTemplate {
+                    Toggle(isOn: Binding {
+                        taskDay != nil
+                    } set: { newValue in
+                        if newValue {
+                            let dayTasks = DayTasks.getOrCreate(for: currentViewingDay ?? .today, template: .shared(in: modelContext), in: modelContext)
+                            task.applyToDay(day: dayTasks, in: modelContext, hasAddToTimeline: false)
+                            withAnimation {
+                                taskDay = currentViewingDay ?? .today
+                            }
                         } else {
-                            Text("\(task.preparationTime.minutesDescription) \(Text("TaskDataEditingView.inAdvance"))")
+                            task.clearDay()
+                            withAnimation {
+                                taskDay = nil
+                            }
                         }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.tertiary)
+                    }) {
+                        Label {
+                            Text("TaskDataEditingView.addToTimeline")
+                        } icon: {
+                            Image(systemName: "text.line.first.and.arrowtriangle.forward")
+                                .foregroundStyle(task.theme.fgColor)
+                        }
                     }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
                 
-                Button {
-                    secondaryMenu = .notification
-                } label: {
-                    let state = NotificationState(notification: task.notification, sound: task.notificationSound)
-                    HStack {
-                        Image(systemName: state.icon)
-                            .imageScale(.large)
-                            .foregroundStyle(task.theme.fgColor)
-                        Text(String(localized: .init("TaskDataEditingView.notification.\(state.rawValue)")))
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.tertiary)
+                if let taskDay {
+                    if !isTemplate {
+                        Button {
+                            secondaryMenu = .date
+                        } label: {
+                            HStack {
+                                Label {
+                                    Text(taskDay.localizedCustomizedDescription)
+                                } icon: {
+                                    Image(systemName: "calendar")
+                                        .foregroundStyle(task.theme.fgColor)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .contentShape(Rectangle())
+                    
+                    Button {
+                        secondaryMenu = .time
+                    } label: {
+                        HStack {
+                            Label {
+                                Text("\(task.startTimeOfDay.description)-\(task.endTimeOfDay.description)")
+                            } icon: {
+                                Image(systemName: "clock.fill")
+                                    .foregroundStyle(task.theme.fgColor)
+                            }
+                            Spacer()
+                            Text("\((task.endTime - task.startTime).minutesDescription)")
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right")
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        secondaryMenu = .preparation
+                    } label: {
+                        HStack {
+                            Label {
+                                if task.preparationTime == 0 {
+                                    Text("TaskDataEditingView.noPreparation")
+                                } else {
+                                    Text("\(task.preparationTime.minutesDescription) \(Text("TaskDataEditingView.inAdvance"))")
+                                }
+                            } icon: {
+                                Image(systemName: "car.rear.fill")
+                                    .foregroundStyle(task.theme.fgColor)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        secondaryMenu = .duration
+                    } label: {
+                        HStack {
+                            Label {
+                                Text("\((task.endTime - task.startTime).minutesDescription)")
+                            } icon: {
+                                Image(systemName: "clock.fill")
+                                    .foregroundStyle(task.theme.fgColor)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Picker(selection: $task.priorityNum) {
+                        ForEach(0...2, id: \.self) { i in
+                            let priority = TaskPriority(rawValue: i)!
+                            Text(priority.text)
+                        }
+                    } label: {
+                        Label {
+                            Text("TaskDataEditingView.priority")
+                        } icon: {
+                            Image(systemName: "star.fill")
+                                .foregroundStyle(task.theme.fgColor)
+                        }
+                    }
                 }
-                .buttonStyle(.plain)
+            }
+            
+            if taskDay == nil {
+                Section("TaskEditingView.deadline") {
+                    Toggle(isOn: Binding {
+                        task.deadline != nil
+                    } set: { newValue in
+                        withAnimation {
+                            task.deadline = newValue ? (task.deadineDayOnly ? Day.today.next.date : .now) : nil
+                        }
+                    }) {
+                        Label {
+                            Text("TaskEditingView.hasDeadline")
+                        } icon: {
+                            Image(systemName: "hourglass")
+                                .foregroundStyle(task.theme.fgColor)
+                        }
+                    }
+                    
+                    if task.deadline != nil {
+                        Toggle(isOn: Binding {
+                            !task.deadineDayOnly
+                        } set: { newValue in
+                            task.deadineDayOnly = !newValue
+                        }) {
+                            Label {
+                                Text("TaskEditingView.accurateTime")
+                            } icon: {
+                                Image(systemName: "stopwatch.fill")
+                                    .foregroundStyle(task.theme.fgColor)
+                            }
+                        }
+                        
+                        Button {
+                            secondaryMenu = .deadline
+                        } label: {
+                            HStack {
+                                Label {
+                                    Text(task.deadlineDescription)
+                                } icon: {
+                                    Image(systemName: "calendar")
+                                        .foregroundStyle(task.theme.fgColor)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            
+            if taskDay != nil || task.deadline != nil {
+                Section("TaskDataEditingNotificationView.title") {
+                    TaskDataEditingNotificationView(task: task)
+                }
             }
             
             Section("TaskDataEditingView.tags") {
@@ -991,13 +1399,19 @@ struct TaskDataEditingView: View {
             case .preparation:
                 TaskDataEditingPreparationView(task: task)
                     .presentationDetents([.fraction(0.36)])
-            case .notification:
-                TaskDataEditingNotificationView(task: task)
-                    .presentationDetents([.fraction(0.3)])
+            case .date:
+                TaskDataEditingDateView(taskDay: $taskDay, task: task)
+                    .presentationDetents([.fraction(0.56)])
+            case .duration:
+                TaskDataEditingDurationView(task: task)
+                    .presentationDetents([.medium])
+            case .deadline:
+                TaskDataEditingDeadlineView(task: task)
+                    .presentationDetents([task.deadineDayOnly ? .fraction(0.56) : .fraction(0.8)])
             }
         }
         .safeAreaBar(edge: .top) {
-            TaskDataEditingTopBarView(task: task)
+            TaskDataEditingTopBarView(task: task, taskDay: taskDay)
                 .background(.bar)
         }
         .scrollEdgeEffectStyle(.hard, for: .top)
@@ -1033,7 +1447,7 @@ struct TaskDataEditingView: View {
     let container = PreviewContainer.shared
     let vm = TimelineViewModel()
     vm.loadDayTasks(context: container.mainContext)
-    let task: TaskData = .init(title: "Morning Jogging", content: "xxx", theme: .green, startTime: 60 * 4 + 30, endTime: 60 * 5, preparationTime: 10, tags: ["Morning", "Outdoor"])
+    let task: TaskData = .init(title: "Morning Jogging", content: "xxx", theme: .green, startTime: 60 * 4 + 30, endTime: 60 * 5, preparationTime: 10, tags: ["Morning", "Outdoor"], day: vm.dayTasks)
     return TaskEditingView(task: task)
-        .environment(vm)
+        .modelContainer(container)
 }
