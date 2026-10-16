@@ -23,8 +23,8 @@
               }
             }
           ],
-          "image-name" : "calendar.day.timeline.left 2.svg",
-          "name" : "calendar.day.timeline.left 2",
+          "image-name" : "calendar.day.timeline.left.svg",
+          "name" : "calendar.day.timeline.left",
           "position" : {
             "scale" : 8,
             "translation-in-points" : [
