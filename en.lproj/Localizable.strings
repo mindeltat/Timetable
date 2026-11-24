@@ -106,7 +106,7 @@
 "DisplaySettingsView.mode.minimum" = "More Intuitive";
 "DisplaySettingsView.mode.maximum" = "More Compact";
 "PresetsSettingsView.notification" = "Notification";
-"PresetsSettingsView.duration" = "Durarions";
+"PresetsSettingsView.duration" = "Durations";
 "PresetsSettingsView.notification.notification" = "Turn on notification by default";
 "PresetsSettingsView.notification.sound" = "Turn on notification sound by default";
 "DurationPresetEditingView.title" = "Duration Preset";
@@ -138,6 +138,6 @@
 "TaskEditingView.accurateTime" = "Including Accurate Time";
 "notification.unscheduled.1" = "needs to be done by";
 "notification.unscheduled.2" = ". It would take";
-"notification.unscheduled.3" = "to finish the task.";
+"notification.unscheduled.3" = " to finish the task.";
 "UnscheduledTaskView.finished" = "Finished";
 "TaskDataEditingDateView.title" = "Date";
